@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     rate_limit_rpm: int = 60
     idempotency_ttl_s: int = 86400
 
+    # ── Kafka (Phase 2) ────────────────────────────────────────────────────────
+    kafka_bootstrap_servers: str = "localhost:9092"
+    kafka_topic_raw_events: str = "raw-events"
+    kafka_topic_transformed_events: str = "transformed-events"
+    kafka_topic_dead_letter: str = "dead-letter"
+    kafka_consumer_group_transform: str = "relay-transform-group"
+    kafka_consumer_group_delivery: str = "relay-delivery-group"
+
     model_config = {"env_prefix": "RELAY_", "env_file": ".env"}
 
 

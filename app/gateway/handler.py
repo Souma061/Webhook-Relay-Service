@@ -1,16 +1,16 @@
 import hashlib
 import hmac
+import json
 import uuid
 
-from fastapi import APIRouter, Header, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.core.config import settings
 from app.core.redis import get_redis
+from app.core.kafka import get_kafka
 from app.core.database import async_session_factory
 from app.models.endpoint import Endpoint
 from app.models.event import Event
-from app.models.route import Route
-from app.delivery.worker import schedule_deliveries
 
 router = APIRouter()
 
@@ -19,7 +19,6 @@ router = APIRouter()
 async def receive_webhook(
     endpoint_id: str,
     request: Request,
-    background_tasks: BackgroundTasks,
     x_hub_signature_256: str | None = Header(None),
     idempotency_key: str | None = Header(None),
 ):
@@ -72,16 +71,18 @@ async def receive_webhook(
         await db.commit()
         await db.refresh(event)
 
-        routes_result = await db.execute(
-            Route.__table__.select().where(
-                Route.endpoint_id == endpoint.id,
-                Route.is_active == True,
-            )
-        )
-        routes = routes_result.fetchall()
-
-    if routes:
-        background_tasks.add_task(schedule_deliveries, event, [dict(r._mapping) for r in routes])
+    # ── Phase 2: publish a lightweight message to Kafka ────────────────────────
+    # The transform worker will pick this up, load the routes from DB,
+    # apply transforms, and publish one message per route to transformed-events.
+    producer = get_kafka()
+    await producer.send_and_wait(
+        settings.kafka_topic_raw_events,
+        value={
+            "event_id": str(event.id),
+            "endpoint_id": str(event.endpoint_id),
+        },
+        key=str(event.endpoint_id).encode(),  # partition by endpoint for ordering
+    )
 
     return {"status": "accepted", "event_id": str(event.id)}
 """
@@ -92,9 +93,8 @@ Accepts POST requests at /hooks/{endpoint_id} and:
 2. Verifies HMAC-SHA256 signature if the endpoint has a secret
 3. Checks idempotency key via Redis (prevents duplicate processing)
 4. Stores the raw event in the events table
-5. Spawns background delivery tasks for each active route
+5. Publishes a light message (event_id, endpoint_id) to Kafka raw-events topic
 6. Returns 202 Accepted immediately
 
-This is the public-facing entry point of the relay service.
-In Phase 1, delivery runs in-process via asyncio.ensure_future().
+Phase 2: delivery is fully decoupled — transform + delivery run in separate worker processes.
 """

@@ -1,144 +1,308 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Activity, Webhook, Settings, Database, Server, RefreshCw, Plus } from 'lucide-react';
+import { Activity, Webhook, Database, Settings, RefreshCw, Plus, Server, CheckCircle2, XCircle, Clock, Trash2, KeyRound } from 'lucide-react';
 import './index.css';
 
+// --- Types ---
 interface Endpoint {
   id: string;
   name: string;
   is_active: boolean;
-  rate_limit_rps: number | null;
+  hmac_secret: string;
   created_at: string;
-  updated_at: string;
 }
+
+interface RouteType {
+  id: string;
+  name: string;
+  url: string;
+  method: string;
+  is_active: boolean;
+  timeout_ms: number;
+  max_retries: number;
+  created_at: string;
+}
+
+interface EventType {
+  id: string;
+  endpoint_id: string;
+  idempotency_key: string | null;
+  request_body: any;
+  received_at: string;
+}
+
+interface DeliveryAttempt {
+  id: string;
+  event_id: string;
+  route_id: string;
+  attempt_number: number;
+  request_url: string;
+  response_status: number | null;
+  error: string | null;
+  duration_ms: number | null;
+  attempted_at: string;
+}
+
+// --- Components ---
 
 const Sidebar = () => {
   const location = useLocation();
   
   const navItems = [
-    { path: '/', icon: <Activity size={20} />, label: 'Dashboard' },
-    { path: '/endpoints', icon: <Webhook size={20} />, label: 'Endpoints' },
-    { path: '/events', icon: <Database size={20} />, label: 'Events & DLQ' },
-    { path: '/settings', icon: <Settings size={20} />, label: 'Settings' },
+    { path: '/', icon: <Activity size={18} />, label: 'Overview' },
+    { path: '/endpoints', icon: <Webhook size={18} />, label: 'Endpoints' },
+    { path: '/events', icon: <Database size={18} />, label: 'Events Log' },
+    { path: '/settings', icon: <Settings size={18} />, label: 'Settings' },
   ];
 
   return (
-    <div className="sidebar glass-panel flex-col" style={{ width: '250px', minHeight: 'calc(100vh - 4rem)', padding: '1.5rem', borderRight: '1px solid var(--glass-border)', borderRadius: '0' }}>
-      <div className="flex-row gap-2" style={{ marginBottom: '2rem', color: '#fff' }}>
-        <Server size={28} color="var(--accent-color)" />
-        <h2>Relay<span style={{color: 'var(--accent-color)'}}>HQ</span></h2>
+    <aside className="sidebar">
+      <div className="sidebar-brand">
+        <div className="brand-icon">
+          <Server size={20} color="#fff" strokeWidth={2.5} />
+        </div>
+        <div className="brand-name">Relay<span>HQ</span></div>
       </div>
       
-      <nav className="flex-col gap-2">
+      <nav className="nav">
         {navItems.map((item) => (
           <Link 
             key={item.path} 
             to={item.path}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              padding: '0.75rem 1rem',
-              borderRadius: '8px',
-              color: location.pathname === item.path ? '#fff' : 'var(--text-secondary)',
-              background: location.pathname === item.path ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-              border: location.pathname === item.path ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent',
-              textDecoration: 'none',
-              transition: 'all 0.2s ease'
-            }}
+            className={`nav-link ${location.pathname === item.path ? 'active' : ''}`}
           >
             {item.icon}
-            <span style={{ fontWeight: 500 }}>{item.label}</span>
+            {item.label}
           </Link>
         ))}
       </nav>
-    </div>
+      
+      <div className="nav-divider"></div>
+      <div className="sidebar-footer">
+        Webhook Relay Service<br/>Phase 2 Architecture<br/>v1.0.0
+      </div>
+    </aside>
   );
 };
 
+// --- Pages ---
+
 const DashboardHome = () => {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
+  const [events, setEvents] = useState<EventType[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchEndpoints = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/endpoints/');
-      if (response.ok) {
-        const data = await response.json();
-        setEndpoints(data);
-      }
+      const [epRes, evRes] = await Promise.all([
+        fetch('/api/endpoints/'),
+        fetch('/api/events/') // Assuming this exists or returns []
+      ]);
+      if (epRes.ok) setEndpoints(await epRes.json());
+      if (evRes.ok) setEvents(await evRes.json());
     } catch (error) {
-      console.error("Failed to fetch endpoints", error);
+      console.error("Fetch failed", error);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchEndpoints();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   return (
-    <div className="animate-fade-in flex-col gap-8">
-      <div className="flex-row justify-between">
+    <div className="animate-in flex-col gap-8">
+      <header className="page-header">
         <div>
-          <h1>Overview</h1>
-          <p>Real-time metrics for your webhook infrastructure.</p>
+          <h1 className="page-title">Overview</h1>
+          <p className="page-sub">Real-time metrics for your webhook infrastructure.</p>
         </div>
-        <button className="btn btn-primary" onClick={fetchEndpoints}><RefreshCw size={16} /> Refresh</button>
-      </div>
+        <button className="btn btn-secondary" onClick={fetchData} disabled={loading}>
+          <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
+        </button>
+      </header>
 
-      <div className="flex-row gap-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-        <div className="glass-panel" style={{ padding: '1.5rem' }}>
-          <p style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Active Endpoints</p>
-          <h2 style={{ fontSize: '2.5rem', margin: 0 }}>{endpoints.filter(e => e.is_active).length}</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.5rem' }}>Out of {endpoints.length} total</p>
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-label">Total Endpoints</div>
+          <div className="stat-value">{endpoints.length}</div>
+          <div className="stat-sub">{endpoints.filter(e => e.is_active).length} active</div>
         </div>
-        
-        <div className="glass-panel" style={{ padding: '1.5rem' }}>
-          <p style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Service Health</p>
-          <h2 style={{ fontSize: '2.5rem', margin: 0 }}>Online</h2>
-          <div style={{ background: 'rgba(255,255,255,0.1)', height: '4px', borderRadius: '2px', marginTop: '1rem', overflow: 'hidden' }}>
-            <div style={{ background: 'var(--success-color)', width: '100%', height: '100%' }}></div>
+        <div className="stat-card">
+          <div className="stat-label">Total Events</div>
+          <div className="stat-value">{events.length}</div>
+          <div className="stat-sub">Ingested</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">System Status</div>
+          <div className="flex items-center gap-2 mt-2" style={{color: 'var(--success)'}}>
+            <div className="dot dot-green dot-pulse"></div>
+            <span style={{fontWeight: 600}}>All Systems Normal</span>
           </div>
         </div>
       </div>
 
-      <div>
-        <div className="flex-row justify-between" style={{ marginBottom: '1rem' }}>
-          <h2>Recent Endpoints</h2>
-          <Link to="/endpoints" className="btn btn-secondary">View All</Link>
+      <div className="card">
+        <div className="card-header">
+          <div className="card-header-title">Recent Endpoints</div>
+          <Link to="/endpoints" className="btn btn-sm btn-secondary">View All</Link>
         </div>
-        
-        <div className="glass-panel" style={{ overflow: 'hidden' }}>
-          {loading ? (
-            <p style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading endpoints...</p>
-          ) : endpoints.length === 0 ? (
-            <p style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No endpoints found. Create one to get started.</p>
+        <div className="table-wrap">
+          {endpoints.length === 0 ? (
+            <div className="empty-state">No endpoints configured yet.</div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>ID</th>
-                  <th>Status</th>
-                  <th>Created At</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
+            <table>
+              <thead><tr><th>Name</th><th>ID</th><th>Status</th><th>Created</th></tr></thead>
               <tbody>
                 {endpoints.slice(0, 5).map(ep => (
                   <tr key={ep.id}>
-                    <td style={{ fontWeight: 500 }}>{ep.name}</td>
-                    <td style={{ fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{ep.id.substring(0, 13)}...</td>
+                    <td className="td-primary">{ep.name}</td>
+                    <td className="mono">{ep.id.substring(0,8)}...</td>
                     <td>
                       <span className={`badge ${ep.is_active ? 'badge-active' : 'badge-inactive'}`}>
                         {ep.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td>{new Date(ep.created_at).toLocaleDateString()}</td>
-                    <td><button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>Details</button></td>
+                    <td>{new Date(ep.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const EndpointDetail = ({ endpoint, onBack }: { endpoint: Endpoint, onBack: () => void }) => {
+  const [routes, setRoutes] = useState<RouteType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAddingRoute, setIsAddingRoute] = useState(false);
+  const [newRoute, setNewRoute] = useState({ name: '', url: '', method: 'POST' });
+
+  const fetchRoutes = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/endpoints/${endpoint.id}/routes`);
+      if (res.ok) setRoutes(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchRoutes(); }, [endpoint.id]);
+
+  const handleAddRoute = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRoute.name || !newRoute.url) return;
+    try {
+      const res = await fetch(`/api/endpoints/${endpoint.id}/routes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRoute)
+      });
+      if (res.ok) {
+        setIsAddingRoute(false);
+        setNewRoute({ name: '', url: '', method: 'POST' });
+        fetchRoutes();
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleRotateSecret = async () => {
+    if (!confirm("Rotate secret? Existing integrators will fail immediately.")) return;
+    try {
+      const res = await fetch(`/api/endpoints/${endpoint.id}/rotate`, { method: 'POST' });
+      if (res.ok) {
+         alert("Secret rotated! Refresh the endpoints list to see the new secret.");
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  return (
+    <div className="animate-in flex-col gap-6">
+      <div className="flex items-center gap-4">
+        <button className="btn btn-secondary btn-sm" onClick={onBack}>&larr; Back</button>
+        <h2 className="page-title" style={{margin: 0}}>{endpoint.name}</h2>
+        <span className={`badge ${endpoint.is_active ? 'badge-active' : 'badge-inactive'}`}>
+          {endpoint.is_active ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+
+      <div className="card card-p flex-col gap-4">
+        <div className="section-label">Ingestion Details</div>
+        <div className="flex-col gap-2">
+          <div className="flex justify-between items-center">
+            <span className="text-muted text-sm">Endpoint URL</span>
+            <code className="mono" style={{color: 'var(--text-primary)'}}>
+              http://localhost:8000/hooks/{endpoint.id}
+            </code>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-muted text-sm">HMAC Secret (Keep secure!)</span>
+            <div className="flex items-center gap-2">
+              <span className="secret-box">{endpoint.hmac_secret}</span>
+              <button className="btn btn-secondary btn-icon" onClick={handleRotateSecret} title="Rotate Secret"><RefreshCw size={14}/></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <div className="card-header-title">Delivery Routes</div>
+          <button className="btn btn-primary btn-sm" onClick={() => setIsAddingRoute(true)}>
+            <Plus size={14}/> Add Route
+          </button>
+        </div>
+        
+        {isAddingRoute && (
+          <div className="expand-panel">
+            <form onSubmit={handleAddRoute} className="flex gap-4 items-start">
+              <div className="form-field flex-1">
+                <label className="form-label">Route Name</label>
+                <input required placeholder="e.g. My Backend" value={newRoute.name} onChange={e => setNewRoute({...newRoute, name: e.target.value})} />
+              </div>
+              <div className="form-field" style={{width: '120px'}}>
+                <label className="form-label">Method</label>
+                <select value={newRoute.method} onChange={e => setNewRoute({...newRoute, method: e.target.value})}>
+                  <option>POST</option>
+                  <option>PUT</option>
+                  <option>PATCH</option>
+                </select>
+              </div>
+              <div className="form-field flex-1">
+                <label className="form-label">Destination URL</label>
+                <input required type="url" placeholder="https://api.example.com/webhooks" value={newRoute.url} onChange={e => setNewRoute({...newRoute, url: e.target.value})} />
+              </div>
+              <div className="flex items-center gap-2" style={{marginTop: '1.4rem'}}>
+                 <button type="submit" className="btn btn-primary">Save</button>
+                 <button type="button" className="btn btn-secondary" onClick={() => setIsAddingRoute(false)}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        <div className="table-wrap">
+          {loading ? (
+             <div className="empty-state"><div className="spinner"></div></div>
+          ) : routes.length === 0 ? (
+            <div className="empty-state">No routes configured. Webhooks received here will be discarded.</div>
+          ) : (
+            <table>
+              <thead><tr><th>Name</th><th>Method</th><th>URL</th><th>Status</th></tr></thead>
+              <tbody>
+                {routes.map(r => (
+                  <tr key={r.id}>
+                    <td className="td-primary">{r.name}</td>
+                    <td><span className="badge badge-method">{r.method}</span></td>
+                    <td className="mono">{r.url}</td>
+                    <td>
+                      <span className={`badge ${r.is_active ? 'badge-active' : 'badge-inactive'}`}>
+                        {r.is_active ? 'Active' : 'Paused'}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -155,30 +319,23 @@ const EndpointsPage = () => {
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
 
   const fetchEndpoints = async () => {
     setLoading(true);
     try {
       const response = await fetch('/api/endpoints/');
-      if (response.ok) {
-        const data = await response.json();
-        setEndpoints(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch endpoints", error);
+      if (response.ok) setEndpoints(await response.json());
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchEndpoints();
-  }, []);
+  useEffect(() => { fetchEndpoints(); }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
-    
     try {
       const response = await fetch('/api/endpoints/', {
         method: 'POST',
@@ -186,96 +343,109 @@ const EndpointsPage = () => {
         body: JSON.stringify({ name: newName })
       });
       if (response.ok) {
-        setNewName('');
-        setIsCreating(false);
-        fetchEndpoints();
+        setNewName(''); setIsCreating(false); fetchEndpoints();
+      } else {
+        alert("Failed to create endpoint: " + await response.text());
       }
-    } catch (error) {
-      console.error("Failed to create endpoint", error);
+    } catch (error: any) { 
+      console.error(error); 
+      alert("Network error: " + error.message); 
     }
   };
 
+  if (selectedEndpoint) {
+    return <EndpointDetail endpoint={selectedEndpoint} onBack={() => {setSelectedEndpoint(null); fetchEndpoints();}} />
+  }
+
   return (
-    <div className="animate-fade-in flex-col gap-8">
-      <div className="flex-row justify-between">
+    <div className="animate-in flex-col gap-6">
+      <header className="page-header">
         <div>
-          <h1>Endpoints</h1>
-          <p>Manage your webhook ingestion URLs and destination routes.</p>
+          <h1 className="page-title">Endpoints</h1>
+          <p className="page-sub">Manage your webhook ingestion URLs and destination routes.</p>
         </div>
         <button className="btn btn-primary" onClick={() => setIsCreating(true)}>
-          <Plus size={18} /> New Endpoint
+          <Plus size={16} /> New Endpoint
         </button>
-      </div>
+      </header>
 
       {isCreating && (
-        <div className="glass-panel animate-fade-in" style={{ padding: '1.5rem', marginBottom: '1rem' }}>
-          <h3>Create New Endpoint</h3>
-          <form onSubmit={handleCreate} className="flex-row gap-4" style={{ marginTop: '1rem' }}>
-            <input 
-              type="text" 
-              placeholder="Endpoint Name (e.g. Stripe Webhooks)" 
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              style={{ flex: 1, padding: '0.8rem 1rem', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.2)', color: 'white', outline: 'none' }}
-              autoFocus
-            />
+        <div className="inline-form animate-in mb-6">
+          <form onSubmit={handleCreate} className="flex gap-4 items-end">
+            <div className="form-field flex-1">
+              <label className="form-label">Endpoint Name</label>
+              <input 
+                type="text" 
+                placeholder="e.g. Stripe Webhooks" 
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
             <button type="submit" className="btn btn-primary">Create</button>
             <button type="button" className="btn btn-secondary" onClick={() => setIsCreating(false)}>Cancel</button>
           </form>
         </div>
       )}
       
-      <div className="glass-panel" style={{ overflow: 'hidden' }}>
+      <div className="card">
+        <div className="table-wrap">
           {loading ? (
-            <p style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading endpoints...</p>
+             <div className="empty-state"><div className="spinner"></div></div>
           ) : endpoints.length === 0 ? (
-            <p style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No endpoints found. Create one to get started.</p>
+            <div className="empty-state">No endpoints found. Create one to get started.</div>
           ) : (
-            <table className="data-table">
+            <table>
               <thead>
                 <tr>
                   <th>Name</th>
                   <th>ID</th>
                   <th>Status</th>
-                  <th>Created At</th>
+                  <th>Created</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {endpoints.map(ep => (
                   <tr key={ep.id}>
-                    <td style={{ fontWeight: 500 }}>{ep.name}</td>
-                    <td style={{ fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{ep.id}</td>
+                    <td className="td-primary">{ep.name}</td>
+                    <td className="mono">{ep.id}</td>
                     <td>
                       <span className={`badge ${ep.is_active ? 'badge-active' : 'badge-inactive'}`}>
                         {ep.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
                     <td>{new Date(ep.created_at).toLocaleDateString()}</td>
-                    <td><button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>Configure</button></td>
+                    <td>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setSelectedEndpoint(ep)}>
+                        Configure
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
         </div>
+      </div>
     </div>
   );
 };
 
+// --- Main App ---
 function App() {
   return (
     <BrowserRouter>
-      <div style={{ display: 'flex', minHeight: '100vh', width: '100%' }}>
+      <div className="layout">
         <Sidebar />
-        <main style={{ flex: 1, padding: '2rem 3rem', overflowY: 'auto' }}>
-          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <Routes>
-              <Route path="/" element={<DashboardHome />} />
-              <Route path="/endpoints" element={<EndpointsPage />} />
-              <Route path="*" element={<div className="animate-fade-in"><h2>Coming Soon</h2><p>This module is currently under development in Phase 2.</p></div>} />
-            </Routes>
-          </div>
+        <main className="main-content">
+          <Routes>
+            <Route path="/" element={<DashboardHome />} />
+            <Route path="/endpoints" element={<EndpointsPage />} />
+            <Route path="/events" element={<div className="animate-in"><h1 className="page-title">Events Log</h1><p className="page-sub mt-2">API implementation for Events Log is pending Phase 3.</p></div>} />
+            <Route path="*" element={<div className="animate-in"><h1 className="page-title">Coming Soon</h1><p className="page-sub mt-2">This module is under development.</p></div>} />
+          </Routes>
         </main>
       </div>
     </BrowserRouter>

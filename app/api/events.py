@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
 from app.core.database import async_session_factory
+from app.core.kafka import get_kafka
+from app.core.config import settings
 from app.models.event import Event
 from app.models.delivery_attempt import DeliveryAttempt
 from app.schemas.api import EventOut, DeliveryAttemptOut
@@ -53,6 +55,32 @@ async def get_event_attempts(event_id: str):
             .order_by(DeliveryAttempt.attempt_number)
         )
         return result.scalars().all()
+
+
+@router.post("/{event_id}/replay", status_code=202)
+async def replay_event(event_id: str):
+    """Re-publish the stored event to the raw-events Kafka topic for full re-processing.
+
+    Useful for retrying DLQ events or any failed delivery after fixing a config issue.
+    The event goes through the full transform → delivery pipeline again.
+    """
+    ev_id = _parse_uuid(event_id, "event_id")
+    async with async_session_factory() as db:
+        event = await db.get(Event, ev_id)
+        if not event:
+            raise HTTPException(404, "event not found")
+
+    producer = get_kafka()
+    await producer.send_and_wait(
+        settings.kafka_topic_raw_events,
+        value={
+            "event_id": str(event.id),
+            "endpoint_id": str(event.endpoint_id),
+            "is_replay": True,
+        },
+        key=str(event.endpoint_id).encode(),
+    )
+    return {"status": "replaying", "event_id": str(event.id)}
 """
 events.py — Event and delivery attempt API.
 
@@ -60,6 +88,6 @@ Provides read-only access to the webhook audit trail:
 - GET /api/events — list events (paginated, optional endpoint filter)
 - GET /api/events/{id} — get a single event with payload
 - GET /api/events/{id}/attempts — get all delivery attempts for an event
-
-Phase 1 is read-only. Phase 2 adds replay (POST /api/events/{id}/replay).
+- POST /api/events/{id}/replay — re-inject event into the raw-events Kafka topic (Phase 2)
 """
+

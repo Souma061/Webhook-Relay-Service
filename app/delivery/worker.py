@@ -1,3 +1,5 @@
+import asyncio
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -7,7 +9,6 @@ from app.models.delivery_attempt import DeliveryAttempt
 from app.transform.engine import apply_pipeline
 from app.delivery.circuit_breaker import CircuitBreaker
 from app.core.rate_limiter import SlidingWindowRateLimiter
-import asyncio
 
 rate_limiter = SlidingWindowRateLimiter()
 
@@ -42,6 +43,7 @@ async def schedule_deliveries(event,routes: list[dict]):
         ))
 
     await asyncio.gather(*tasks, return_exceptions=True)
+    # Note: return_exceptions=True prevents one failing delivery from cancelling the others. In Phase 2, we may want more robust error handling/logging here.
 
 
 async def _deliver_with_retry(
@@ -108,7 +110,7 @@ async def _deliver_with_retry(
         response_body = resp.text
     except httpx.TimeoutException as e:
         error = f"timeout: {e}"
-    except httpx.ConnectionError as e:
+    except httpx.ConnectError as e:
         error = f"connection_error: {e}"
     except Exception as e:
         error = f"{type(e).__name__}: {e}"
@@ -148,11 +150,34 @@ async def _deliver_with_retry(
             delay = delay + random.uniform(0, delay * 0.5)
             await asyncio.sleep(delay)
             await _deliver_with_retry(event_id, route, body, next_attempt)
+        else:
+            # ── All retries exhausted — publish to Dead Letter Queue ──────────
+            # The DLQ consumer (or an operator) can replay this via
+            # POST /api/events/{event_id}/replay later.
+            try:
+                from app.core.kafka import get_kafka
+                producer = get_kafka()
+                await producer.send_and_wait(
+                    settings.kafka_topic_dead_letter,
+                    value={
+                        "event_id": str(event_id),
+                        "route_id": str(route["id"]),
+                        "url": url,
+                        "body": body,
+                        "last_error": error,
+                        "last_response_status": response_status,
+                        "attempts": max_retries,
+                    },
+                    key=str(event_id).encode(),
+                )
+            except RuntimeError:
+                # Kafka not initialised (e.g. running in Phase 1 mode or tests)
+                pass
         return
 """
 worker.py — Delivery worker with retry logic.
 
-Runs as a background asyncio task (not a separate process in Phase 1).
+Runs as a Kafka consumer task in Phase 2 (delivery_worker.py calls _deliver_with_retry directly).
 
 Flow:
 1. Apply transform pipeline on the event payload
@@ -161,7 +186,7 @@ Flow:
 4. On success: done
 5. On 4xx error: abandon (bad config, retrying won't help)
 6. On 5xx/network error: retry with exponential backoff + jitter
-7. After exhausting retries: silently drop (Phase 1; Phase 2 adds DLQ)
+7. After exhausting retries: publish to Kafka dead-letter topic for manual replay
 
 The backoff uses: base_ms × 2^attempt + random jitter (0-50%)
 Jitter prevents the thundering herd problem when many events fail at once.

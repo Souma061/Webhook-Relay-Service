@@ -22,9 +22,4 @@ circuit_breaker:
 
 idempotency:
   ttl_s: 86400
-"""
-default.yaml — Default YAML configuration (overridden by env vars).
 
-Included for reference. Settings are loaded from environment variables
-at runtime; this file documents the defaults.
-"""
