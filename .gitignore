@@ -3,3 +3,12 @@ venv/
 __pycache__
 .pytest_cache
 # dashboard/
+
+# Documentation (Keep Local)
+DEEP_DIVE.md
+phase1_audit.md
+PRD.md
+STRUCTURE.md
+
+# SQLTools Sessions
+*.session.sql
