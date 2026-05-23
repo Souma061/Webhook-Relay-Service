@@ -1,0 +1,30 @@
+app:
+  name: webhook-relay
+  debug: false
+
+database:
+  url: postgresql+asyncpg://postgres:postgres@localhost:5432/webhook_relay
+
+redis:
+  url: redis://localhost:6379/0
+
+delivery:
+  max_attempts: 5
+  retry_backoff_ms: 1000
+  timeout_ms: 10000
+
+rate_limiter:
+  rpm: 60
+
+circuit_breaker:
+  threshold: 10
+  cooldown_s: 30
+
+idempotency:
+  ttl_s: 86400
+"""
+default.yaml — Default YAML configuration (overridden by env vars).
+
+Included for reference. Settings are loaded from environment variables
+at runtime; this file documents the defaults.
+"""
