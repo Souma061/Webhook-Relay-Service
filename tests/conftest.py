@@ -41,11 +41,15 @@ from app.core.redis import init_redis, close_redis
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def setup_database():
+    # Always drop and recreate to ensure the schema matches the current ORM models.
+    # This prevents stale-column errors when new columns are added (e.g. filter_expression).
     async with core_db.engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield
     async with core_db.engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def setup_redis():
