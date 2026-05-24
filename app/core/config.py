@@ -5,7 +5,9 @@ class Settings(BaseSettings):
     app_name: str = "webhook-relay"
     debug: bool = False
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/webhook_relay"
+    database_url: str = (
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/webhook_relay"
+    )
     redis_url: str = "redis://localhost:6379/0"
 
     max_delivery_attempts: int = 5
