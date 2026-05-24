@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import signal
+import jmespath
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from sqlalchemy import select
@@ -117,6 +118,23 @@ async def _process(producer: AIOKafkaProducer, event_id: str, endpoint_id: str):
 
     for route in routes:
         body = ev.request_body
+
+        # Evaluate route filtering condition (JMESPath)
+        if route.filter_expression:
+            try:
+                match = jmespath.search(route.filter_expression, body)
+                if not bool(match):
+                    logger.info(
+                        "Event %s skipped for route %s (filter expression %r did not match)",
+                        event_id, route.id, route.filter_expression
+                    )
+                    continue
+            except Exception as exc:
+                logger.error(
+                    "Filter evaluation failed for route %s on event %s: %s. Skipping delivery.",
+                    route.id, event_id, exc
+                )
+                continue
 
         # Apply transform pipeline if configured on this route
         if route.transform_pipeline:

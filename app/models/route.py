@@ -23,6 +23,7 @@ class Route(Base):
     max_retries: Mapped[int] = mapped_column(Integer, default=5)
     retry_backoff_ms: Mapped[int] = mapped_column(Integer, default=1000)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    filter_expression: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     endpoint = relationship("Endpoint", back_populates="routes")

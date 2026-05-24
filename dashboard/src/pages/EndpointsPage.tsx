@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import type { Endpoint, ToastType } from '../types';
 import { fmt } from '../utils/helpers';
 import { EndpointDetail } from './EndpointDetail';
+import { ConfirmModal, type ConfirmModalConfig } from '../components/ConfirmModal';
 
 interface EndpointsPageProps {
   toast: (message: string, type?: ToastType) => void;
@@ -13,6 +14,7 @@ export const EndpointsPage = ({ toast }: EndpointsPageProps) => {
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmModalConfig | null>(null);
   const [selected, setSelected] = useState<Endpoint | null>(null);
 
   const fetchEndpoints = useCallback(async () => {
@@ -48,17 +50,26 @@ export const EndpointsPage = ({ toast }: EndpointsPageProps) => {
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete endpoint "${name}"? This will remove all routes.`)) return;
-    setLoading(true);
-    const res = await fetch(`/api/endpoints/${id}`, { method: 'DELETE' });
-    if (res.ok) {
-      fetchEndpoints();
-      toast('Endpoint deleted');
-    } else {
-      setLoading(false);
-      toast('Failed to delete endpoint', 'error');
-    }
+  const handleDelete = (id: string, name: string) => {
+    setConfirmConfig({
+      title: 'Delete Endpoint',
+      message: `Are you sure you want to delete the endpoint "${name}"? This will permanently remove all associated delivery routes.`,
+      confirmText: 'Delete',
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmConfig(null);
+        setLoading(true);
+        const res = await fetch(`/api/endpoints/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          fetchEndpoints();
+          toast('Endpoint deleted');
+        } else {
+          setLoading(false);
+          toast('Failed to delete endpoint', 'error');
+        }
+      },
+      onCancel: () => setConfirmConfig(null),
+    });
   };
 
   if (selected) {
@@ -154,6 +165,7 @@ export const EndpointsPage = ({ toast }: EndpointsPageProps) => {
           )}
         </div>
       </div>
+      <ConfirmModal config={confirmConfig} />
     </div>
   );
 };

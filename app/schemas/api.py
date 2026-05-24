@@ -1,7 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from uuid import UUID
 from datetime import datetime
 from typing import Any
+import jmespath
+from jmespath.exceptions import JMESPathError
 
 
 class EndpointCreate(BaseModel):
@@ -25,6 +27,15 @@ class EndpointOut(BaseModel):
         from_attributes = True
 
 
+def _validate_jmespath(v: str | None) -> str | None:
+    if v is not None and v.strip() != "":
+        try:
+            jmespath.compile(v)
+        except JMESPathError as e:
+            raise ValueError(f"Invalid JMESPath expression: {e}")
+    return v
+
+
 class RouteUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
@@ -35,6 +46,12 @@ class RouteUpdate(BaseModel):
     max_retries: int | None = None
     retry_backoff_ms: int | None = None
     is_active: bool | None = None
+    filter_expression: str | None = None
+
+    @field_validator("filter_expression")
+    @classmethod
+    def check_filter(cls, v: str | None) -> str | None:
+        return _validate_jmespath(v)
 
 
 class SecretRotateOut(BaseModel):
@@ -51,6 +68,12 @@ class RouteCreate(BaseModel):
     timeout_ms: int = 10000
     max_retries: int = 5
     retry_backoff_ms: int = 1000
+    filter_expression: str | None = None
+
+    @field_validator("filter_expression")
+    @classmethod
+    def check_filter(cls, v: str | None) -> str | None:
+        return _validate_jmespath(v)
 
 
 class RouteOut(BaseModel):
@@ -62,6 +85,7 @@ class RouteOut(BaseModel):
     timeout_ms: int
     max_retries: int
     created_at: datetime
+    filter_expression: str | None = None
 
     class Config:
         from_attributes = True

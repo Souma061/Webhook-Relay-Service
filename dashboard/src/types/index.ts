@@ -14,6 +14,7 @@ export interface RouteConfig {
   is_active: boolean;
   timeout_ms: number;
   max_retries: number;
+  filter_expression: string | null;
   created_at: string;
 }
 

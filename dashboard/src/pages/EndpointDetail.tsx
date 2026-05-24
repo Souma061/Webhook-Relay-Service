@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { KeyRound, Plus, Trash2 } from 'lucide-react';
 import type { Endpoint, RouteConfig, ToastType } from '../types';
+import { ConfirmModal, type ConfirmModalConfig } from '../components/ConfirmModal';
 
 interface EndpointDetailProps {
   endpoint: Endpoint;
@@ -12,7 +13,8 @@ export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps)
   const [routes, setRoutes] = useState<RouteConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddingRoute, setIsAddingRoute] = useState(false);
-  const [newRoute, setNewRoute] = useState({ name: '', url: '', method: 'POST' });
+  const [newRoute, setNewRoute] = useState({ name: '', url: '', method: 'POST', filter_expression: '' });
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmModalConfig | null>(null);
 
   const fetchRoutes = useCallback(async () => {
     try {
@@ -31,40 +33,67 @@ export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps)
     e.preventDefault();
     if (!newRoute.name || !newRoute.url) return;
     setLoading(true);
+    const payload = {
+      name: newRoute.name,
+      url: newRoute.url,
+      method: newRoute.method,
+      filter_expression: newRoute.filter_expression.trim() || null,
+    };
     const res = await fetch(`/api/endpoints/${endpoint.id}/routes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newRoute),
+      body: JSON.stringify(payload),
     });
     if (res.ok) {
       setIsAddingRoute(false);
-      setNewRoute({ name: '', url: '', method: 'POST' });
+      setNewRoute({ name: '', url: '', method: 'POST', filter_expression: '' });
       fetchRoutes();
       toast('Route added successfully');
     } else {
       setLoading(false);
-      toast('Failed to add route', 'error');
+      const errData = await res.json().catch(() => ({}));
+      // FastAPI ValueError from field validator is returned in detail[0].msg
+      const errMsg = errData.detail?.[0]?.msg || errData.detail || 'Failed to add route';
+      toast(errMsg, 'error');
     }
   };
 
-  const handleRotateSecret = async () => {
-    if (!confirm('Rotate secret? Existing integrators will fail immediately until updated.')) return;
-    const res = await fetch(`/api/endpoints/${endpoint.id}/rotate`, { method: 'POST' });
-    if (res.ok) toast('Secret rotated — update your webhook source now');
-    else toast('Failed to rotate secret', 'error');
+  const handleRotateSecret = () => {
+    setConfirmConfig({
+      title: 'Rotate Ingestion Secret',
+      message: 'Are you sure you want to rotate the HMAC secret? Existing integrators will fail immediately until updated with the new secret.',
+      confirmText: 'Rotate Secret',
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmConfig(null);
+        const res = await fetch(`/api/endpoints/${endpoint.id}/rotate`, { method: 'POST' });
+        if (res.ok) toast('Secret rotated — update your webhook source now');
+        else toast('Failed to rotate secret', 'error');
+      },
+      onCancel: () => setConfirmConfig(null),
+    });
   };
 
-  const handleDeleteRoute = async (routeId: string) => {
-    if (!confirm('Delete this route?')) return;
-    setLoading(true);
-    const res = await fetch(`/api/endpoints/routes/${routeId}`, { method: 'DELETE' });
-    if (res.ok) {
-      fetchRoutes();
-      toast('Route deleted');
-    } else {
-      setLoading(false);
-      toast('Failed to delete route', 'error');
-    }
+  const handleDeleteRoute = (routeId: string) => {
+    setConfirmConfig({
+      title: 'Delete Route',
+      message: 'Are you sure you want to delete this delivery route? This destination will no longer receive webhook events.',
+      confirmText: 'Delete Route',
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmConfig(null);
+        setLoading(true);
+        const res = await fetch(`/api/endpoints/routes/${routeId}`, { method: 'DELETE' });
+        if (res.ok) {
+          fetchRoutes();
+          toast('Route deleted');
+        } else {
+          setLoading(false);
+          toast('Failed to delete route', 'error');
+        }
+      },
+      onCancel: () => setConfirmConfig(null),
+    });
   };
 
   return (
@@ -108,26 +137,43 @@ export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps)
 
         {isAddingRoute && (
           <div className="expand-panel">
-            <form onSubmit={handleAddRoute} className="flex gap-4 items-start flex-wrap">
-              <div className="form-field flex-1" style={{ minWidth: '160px' }}>
-                <label className="form-label">Route Name</label>
-                <input required placeholder="e.g. My Backend" value={newRoute.name}
-                  onChange={e => setNewRoute({ ...newRoute, name: e.target.value })} />
+            <form onSubmit={handleAddRoute} className="flex-col gap-4" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
+              <div className="flex gap-4 items-start flex-wrap w-full" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', width: '100%' }}>
+                <div className="form-field flex-1" style={{ flex: 1, minWidth: '160px' }}>
+                  <label className="form-label">Route Name</label>
+                  <input required placeholder="e.g. My Backend" value={newRoute.name}
+                    onChange={e => setNewRoute({ ...newRoute, name: e.target.value })} />
+                </div>
+                <div className="form-field" style={{ width: '110px' }}>
+                  <label className="form-label">Method</label>
+                  <select value={newRoute.method} onChange={e => setNewRoute({ ...newRoute, method: e.target.value })}>
+                    <option>POST</option><option>PUT</option><option>PATCH</option>
+                  </select>
+                </div>
+                <div className="form-field flex-2" style={{ flex: 2, minWidth: '240px' }}>
+                  <label className="form-label">Destination URL</label>
+                  <input required type="url" placeholder="https://api.example.com/webhooks"
+                    value={newRoute.url} onChange={e => setNewRoute({ ...newRoute, url: e.target.value })} />
+                </div>
               </div>
-              <div className="form-field" style={{ width: '110px' }}>
-                <label className="form-label">Method</label>
-                <select value={newRoute.method} onChange={e => setNewRoute({ ...newRoute, method: e.target.value })}>
-                  <option>POST</option><option>PUT</option><option>PATCH</option>
-                </select>
+
+              <div className="form-field w-full" style={{ width: '100%' }}>
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'between', alignItems: 'center', width: '100%' }}>
+                  <span>Filter Condition (JMESPath - Optional)</span>
+                </label>
+                <input placeholder="e.g. event_type == 'payment.succeeded' or order.amount > `100`" value={newRoute.filter_expression}
+                  onChange={e => setNewRoute({ ...newRoute, filter_expression: e.target.value })} />
+                <span className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                  Evaluate incoming payload. Leave blank to match all webhooks. Reference fields directly: <code>event_type == 'payment.succeeded'</code>.
+                </span>
               </div>
-              <div className="form-field flex-1" style={{ minWidth: '200px' }}>
-                <label className="form-label">Destination URL</label>
-                <input required type="url" placeholder="https://api.example.com/webhooks"
-                  value={newRoute.url} onChange={e => setNewRoute({ ...newRoute, url: e.target.value })} />
-              </div>
-              <div className="flex items-center gap-2" style={{ marginTop: '1.4rem' }}>
-                <button type="submit" className="btn btn-primary">Save</button>
-                <button type="button" className="btn btn-secondary" onClick={() => setIsAddingRoute(false)}>Cancel</button>
+
+              <div className="flex items-center gap-2" style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <button type="submit" className="btn btn-primary">Save Route</button>
+                <button type="button" className="btn btn-secondary" onClick={() => {
+                  setIsAddingRoute(false);
+                  setNewRoute({ name: '', url: '', method: 'POST', filter_expression: '' });
+                }}>Cancel</button>
               </div>
             </form>
           </div>
@@ -145,6 +191,7 @@ export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps)
                   <th>Name</th>
                   <th>Method</th>
                   <th>Destination URL</th>
+                  <th>Filter Condition</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -155,6 +202,15 @@ export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps)
                     <td className="td-primary">{r.name}</td>
                     <td><span className="badge badge-method">{r.method}</span></td>
                     <td className="mono">{r.url}</td>
+                    <td>
+                      {r.filter_expression ? (
+                        <code className="mono" style={{ fontSize: '0.8rem', background: 'rgba(255,255,255,0.06)', padding: '3px 8px', borderRadius: '4px', color: 'var(--text-secondary)' }}>
+                          {r.filter_expression}
+                        </code>
+                      ) : (
+                        <span className="text-muted" style={{ fontSize: '0.82rem', fontStyle: 'italic' }}>All Events</span>
+                      )}
+                    </td>
                     <td>
                       <span className={`badge ${r.is_active ? 'badge-active' : 'badge-inactive'}`}>
                         {r.is_active ? 'Active' : 'Paused'}
@@ -172,6 +228,7 @@ export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps)
           )}
         </div>
       </div>
+      <ConfirmModal config={confirmConfig} />
     </div>
   );
 };

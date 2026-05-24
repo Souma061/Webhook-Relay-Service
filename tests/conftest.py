@@ -4,10 +4,29 @@ import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.pool import NullPool
+from unittest.mock import AsyncMock, MagicMock
 
 # Configure settings BEFORE importing the app
 os.environ["RELAY_DATABASE_URL"] = "postgresql+asyncpg://postgres:postgres@localhost:5433/webhook_relay"
 os.environ["RELAY_REDIS_URL"] = "redis://localhost:6379/0"
+
+# Mock Kafka before importing app or core components to prevent connection attempts
+import app.core.kafka as core_kafka
+mock_producer = MagicMock()
+mock_producer.start = AsyncMock()
+mock_producer.stop = AsyncMock()
+mock_producer.send_and_wait = AsyncMock()
+
+async def mock_init_kafka():
+    core_kafka._producer = mock_producer
+    return mock_producer
+
+async def mock_close_kafka():
+    core_kafka._producer = None
+
+core_kafka.init_kafka = mock_init_kafka
+core_kafka.close_kafka = mock_close_kafka
+core_kafka._producer = mock_producer
 
 # Import database module and patch it BEFORE importing the app or endpoints.
 # This ensures that all endpoints import the patched NullPool session factory,
