@@ -73,10 +73,26 @@ class EventOut(BaseModel):
     idempotency_key: str | None
     request_body: Any
     received_at: datetime
+    is_discarded: bool
+    discarded_at: datetime | None = None
 
     class Config:
         from_attributes = True
 
+
+class DlqEventOut(BaseModel):
+    """A failed event surfaced in the Dead Letter Queue view."""
+    event_id: UUID
+    endpoint_id: UUID
+    received_at: datetime
+    request_body: Any
+    is_discarded: bool
+    discarded_at: datetime | None
+    # Last delivery attempt details
+    last_error: str | None
+    last_status: int | None
+    last_url: str | None
+    total_attempts: int
 
 class DeliveryAttemptOut(BaseModel):
     id: UUID
@@ -99,14 +115,12 @@ class WebhookResponse(BaseModel):
 """
 api.py — Pydantic schemas for API request/response validation.
 
-Defines the data shapes for creating endpoints/routes and viewing
-events/delivery attempts. Used by FastAPI for auto-docs and validation.
-
 Key schemas:
-- EndpointCreate/Update/Out: create/update/list endpoints
-- RouteCreate/Update/Out: add/update routes to an endpoint
-- SecretRotateOut: returned once after secret rotation
-- EventOut: view stored webhook events
-- DeliveryAttemptOut: view delivery history
-- WebhookResponse: what the sender gets back (202 accepted)
+- EndpointCreate/Update/Out: manage endpoints
+- RouteCreate/Update/Out: manage delivery routes
+- SecretRotateOut: returned once after HMAC secret rotation
+- EventOut: view stored webhook events (includes is_discarded flag)
+- DeliveryAttemptOut: view delivery history per event
+- DlqEventOut: DLQ list view — failed event with last attempt details
+- WebhookResponse: what the sender gets back on 202 Accepted
 """

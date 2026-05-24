@@ -8,7 +8,7 @@ from app.core.redis import init_redis, close_redis
 from app.core.kafka import init_kafka, close_kafka
 from app.gateway.handler import router as gateway_router
 from app.api.endpoints import router as admin_endpoints_router
-from app.api.events import router as admin_events_router
+from app.api.events import router as admin_events_router, dlq_router
 
 
 @asynccontextmanager
@@ -26,6 +26,7 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(gateway_router)
 app.include_router(admin_endpoints_router)
 app.include_router(admin_events_router)
+app.include_router(dlq_router)
 
 
 @app.get("/health")
@@ -35,11 +36,10 @@ async def health():
 main.py — FastAPI application entry point.
 
 Initializes database, Redis, and Kafka producer on startup; cleans up on shutdown.
-Mounts three router groups:
-  - /hooks/{endpoint_id} — webhook ingestion (public)
-  - /api/endpoints — admin CRUD (private)
-  - /api/events — event search, replay (private)
-  - /health — health check
-
-Phase 2: gateway publishes to Kafka; transform + delivery run as separate workers.
+Mounts router groups:
+  - /hooks/{endpoint_id}        — webhook ingestion (public)
+  - /api/endpoints              — admin CRUD for endpoints and routes
+  - /api/events                 — event search, attempts, and replay
+  - /api/dlq                    — dead letter queue management (Phase 3)
+  - /health                     — health check
 """

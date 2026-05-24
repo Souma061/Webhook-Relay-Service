@@ -342,3 +342,46 @@ select option { background: var(--bg-elevated); }
 }
 
 hr { border: none; border-top: 1px solid var(--glass-border); margin: 1.25rem 0; }
+
+/* ── Toast container ─────────────────────────────────────────────────────────── */
+.toast-container {
+  position: fixed; bottom: 1.5rem; right: 1.5rem;
+  display: flex; flex-direction: column; gap: 0.5rem;
+  z-index: 9999; pointer-events: none;
+}
+
+/* ── Danger nav link (DLQ) ───────────────────────────────────────────────────── */
+.nav-link-danger { color: var(--text-muted); }
+.nav-link-danger:hover { color: #fca5a5; background: var(--danger-muted); }
+.nav-link-danger.active {
+  color: #fca5a5;
+  background: var(--danger-muted);
+  border-color: rgba(239,68,68,0.25);
+}
+
+/* ── Expanded table row highlight ────────────────────────────────────────────── */
+.row-expanded td { background: var(--bg-elevated) !important; }
+
+/* ── Delivery attempt timeline ───────────────────────────────────────────────── */
+.timeline { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.timeline-step {
+  display: flex; gap: 0.875rem; align-items: flex-start;
+}
+
+.timeline-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 0.3rem;
+}
+
+.timeline-body { flex: 1; }
+
+/* ── Inline error text ───────────────────────────────────────────────────────── */
+.error-text {
+  color: #fca5a5;
+  font-size: 0.8rem;
+  margin-top: 0.3rem;
+  font-family: 'Fira Code', monospace;
+}
+
+.text-sm { font-size: 0.85rem; }
