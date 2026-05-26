@@ -2,8 +2,24 @@ export interface Endpoint {
   id: string;
   name: string;
   is_active: boolean;
-  hmac_secret: string;
+  hmac_secret?: string;
   created_at: string;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  display_name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  created_at: string;
+  role: string | null;
 }
 
 export interface RouteConfig {

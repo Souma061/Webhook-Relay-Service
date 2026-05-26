@@ -4,7 +4,12 @@ import { RefreshCw } from 'lucide-react';
 import type { Endpoint, WebhookEvent, DlqEvent } from '../types';
 import { fmt, shortId } from '../utils/helpers';
 
-export const OverviewPage = () => {
+interface OverviewPageProps {
+  apiBase: string;
+  apiFetch: typeof fetch;
+}
+
+export const OverviewPage = ({ apiBase, apiFetch }: OverviewPageProps) => {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [events, setEvents] = useState<WebhookEvent[]>([]);
   const [dlq, setDlq] = useState<DlqEvent[]>([]);
@@ -13,9 +18,9 @@ export const OverviewPage = () => {
   const fetchAll = useCallback(async () => {
     try {
       const [epRes, evRes, dlqRes] = await Promise.all([
-        fetch('/api/endpoints/'),
-        fetch('/api/events/'),
-        fetch('/api/dlq/'),
+        apiFetch(`${apiBase}/endpoints`),
+        apiFetch(`${apiBase}/events`),
+        apiFetch(`${apiBase}/dlq`),
       ]);
       if (epRes.ok) setEndpoints(await epRes.json());
       if (evRes.ok) setEvents(await evRes.json());
@@ -23,7 +28,7 @@ export const OverviewPage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiBase, apiFetch]);
 
   useEffect(() => {
     fetchAll();

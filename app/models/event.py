@@ -15,6 +15,11 @@ class Event(Base):
     endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("endpoints.id"), index=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     request_body: Mapped[dict] = mapped_column(JSONB)
+    # Stores lowercased HTTP request headers so the filter engine can
+    # evaluate expressions like: headers."x-github-event" == 'push'
+    request_headers: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending", index=True)
+    retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     # DLQ soft-delete: operator can discard a failed event to hide it from the queue

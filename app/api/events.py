@@ -1,88 +1,98 @@
-"""
-events.py — Event audit trail and Dead Letter Queue management API.
+from __future__ import annotations
 
-Routes mounted under /api:
-  GET  /api/events                     Paginated event list (filter by endpoint)
-  GET  /api/events/{id}                Single event detail
-  GET  /api/events/{id}/attempts       All delivery attempts for an event
-  POST /api/events/{id}/replay         Re-inject event into raw-events topic
-
-  GET  /api/dlq                        DLQ: events with failed deliveries
-  POST /api/dlq/{id}/discard           DLQ: soft-delete (hide from queue)
-  POST /api/dlq/{id}/restore           DLQ: undo a discard
-"""
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 
+from app.core.config import settings
 from app.core.database import async_session_factory
 from app.core.kafka import get_kafka
-from app.core.config import settings
-from app.models.event import Event
+from app.middleware.rbac import get_workspace_membership, require_workspace_role
 from app.models.delivery_attempt import DeliveryAttempt
+from app.models.endpoint import Endpoint
+from app.models.event import Event
+from app.models.workspace import WorkspaceMembership
 from app.schemas.api import DeliveryAttemptOut, DlqEventOut, EventOut
 
-router = APIRouter()
+router = APIRouter(prefix="/api/workspaces/{workspace_id}")
 
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _parse_uuid(value: str, label: str = "id") -> uuid.UUID:
-    """Parse a UUID string, raising HTTP 400 on invalid format."""
     try:
         return uuid.UUID(value)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"invalid {label} format")
 
 
-async def _get_event_or_404(db, event_id: uuid.UUID) -> Event:
+async def _get_event_or_404(db, event_id: uuid.UUID, ws_id: uuid.UUID) -> Event:
     event = await db.get(Event, event_id)
     if not event:
+        raise HTTPException(status_code=404, detail="event not found")
+    ep = await db.get(Endpoint, event.endpoint_id)
+    if not ep or ep.workspace_id != ws_id:
         raise HTTPException(status_code=404, detail="event not found")
     return event
 
 
+async def _list_workspace_endpoint_ids(db, ws_id: uuid.UUID) -> list[uuid.UUID]:
+    result = await db.execute(
+        select(Endpoint.id).where(Endpoint.workspace_id == ws_id)
+    )
+    return result.scalars().all()
+
+
 # ── Events ─────────────────────────────────────────────────────────────────────
 
-events_router = APIRouter(prefix="/api/events", tags=["Events"])
 
-
-@events_router.get("/", response_model=list[EventOut])
+@router.get("/events", response_model=list[EventOut])
 async def list_events(
     endpoint_id: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    membership: WorkspaceMembership = Depends(require_workspace_role("viewer")),
 ):
-    """List events, newest first. Optionally filter by endpoint_id."""
     async with async_session_factory() as db:
+        ws_ep_ids = await _list_workspace_endpoint_ids(db, membership.workspace_id)
+        if not ws_ep_ids:
+            return []
+
         stmt = (
             select(Event)
+            .where(Event.endpoint_id.in_(ws_ep_ids))
             .order_by(Event.received_at.desc())
             .limit(limit)
             .offset(offset)
         )
         if endpoint_id:
-            stmt = stmt.where(Event.endpoint_id == _parse_uuid(endpoint_id, "endpoint_id"))
+            ep_id = _parse_uuid(endpoint_id, "endpoint_id")
+            if ep_id not in ws_ep_ids:
+                raise HTTPException(404, "endpoint not found in this workspace")
+            stmt = stmt.where(Event.endpoint_id == ep_id)
         result = await db.execute(stmt)
         return result.scalars().all()
 
 
-@events_router.get("/{event_id}", response_model=EventOut)
-async def get_event(event_id: str):
-    """Get a single event by ID."""
+@router.get("/events/{event_id}", response_model=EventOut)
+async def get_event(
+    event_id: str,
+    membership: WorkspaceMembership = Depends(require_workspace_role("viewer")),
+):
     ev_id = _parse_uuid(event_id, "event_id")
     async with async_session_factory() as db:
-        return await _get_event_or_404(db, ev_id)
+        return await _get_event_or_404(db, ev_id, membership.workspace_id)
 
 
-@events_router.get("/{event_id}/attempts", response_model=list[DeliveryAttemptOut])
-async def get_event_attempts(event_id: str):
-    """Get all delivery attempts for an event, ordered by attempt number."""
+@router.get("/events/{event_id}/attempts", response_model=list[DeliveryAttemptOut])
+async def get_event_attempts(
+    event_id: str,
+    membership: WorkspaceMembership = Depends(require_workspace_role("viewer")),
+):
     ev_id = _parse_uuid(event_id, "event_id")
     async with async_session_factory() as db:
+        await _get_event_or_404(db, ev_id, membership.workspace_id)
         result = await db.execute(
             select(DeliveryAttempt)
             .where(DeliveryAttempt.event_id == ev_id)
@@ -91,51 +101,48 @@ async def get_event_attempts(event_id: str):
         return result.scalars().all()
 
 
-@events_router.post("/{event_id}/replay", status_code=202)
-async def replay_event(event_id: str):
-    """
-    Re-publish the stored event to raw-events for full re-processing.
-    Works for any event — not just DLQ events. The transform → delivery
-    pipeline will run again from scratch.
-    """
+@router.post("/events/{event_id}/replay", status_code=202)
+async def replay_event(
+    event_id: str,
+    membership: WorkspaceMembership = Depends(require_workspace_role("admin")),
+):
     ev_id = _parse_uuid(event_id, "event_id")
     async with async_session_factory() as db:
-        event = await _get_event_or_404(db, ev_id)
+        event = await _get_event_or_404(db, ev_id, membership.workspace_id)
 
     producer = get_kafka()
-    await producer.send_and_wait(
-        settings.kafka_topic_raw_events,
-        value={
-            "event_id": str(event.id),
-            "endpoint_id": str(event.endpoint_id),
-            "is_replay": True,
-        },
-        key=str(event.endpoint_id).encode(),
-    )
+    if producer is None:
+        raise HTTPException(503, "Kafka is unavailable — cannot replay event")
+    try:
+        await producer.send_and_wait(
+            settings.kafka_topic_raw_events,
+            value={
+                "event_id": str(event.id),
+                "endpoint_id": str(event.endpoint_id),
+                "is_replay": True,
+            },
+            key=str(event.endpoint_id).encode(),
+        )
+    except Exception:
+        raise HTTPException(503, "Failed to publish replay message to Kafka")
     return {"status": "replaying", "event_id": str(event.id)}
 
 
 # ── Dead Letter Queue ──────────────────────────────────────────────────────────
 
-dlq_router = APIRouter(prefix="/api/dlq", tags=["Dead Letter Queue"])
 
-
-@dlq_router.get("/", response_model=list[DlqEventOut])
+@router.get("/dlq", response_model=list[DlqEventOut])
 async def list_dlq(
     include_discarded: Annotated[bool, Query()] = False,
     limit: Annotated[int, Query(le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    membership: WorkspaceMembership = Depends(require_workspace_role("viewer")),
 ):
-    """
-    List events that have at least one failed delivery attempt.
-    By default, discarded events are hidden. Pass include_discarded=true to show all.
-
-    Returns events with their last delivery attempt's error, URL, and status.
-    """
     async with async_session_factory() as db:
-        # Subquery: for each event, get the last delivery attempt with an error
-        # A "DLQ event" = any event with a non-null error on its final attempt,
-        # OR a 5xx response on its latest attempt.
+        ws_ep_ids = await _list_workspace_endpoint_ids(db, membership.workspace_id)
+        if not ws_ep_ids:
+            return []
+
         last_attempt_subq = (
             select(
                 DeliveryAttempt.event_id,
@@ -149,7 +156,6 @@ async def list_dlq(
             .subquery()
         )
 
-        # Join to get the actual last attempt row
         last_attempt = (
             select(DeliveryAttempt)
             .join(
@@ -160,7 +166,6 @@ async def list_dlq(
             .subquery()
         )
 
-        # Count total attempts per event
         attempt_counts = (
             select(
                 DeliveryAttempt.event_id,
@@ -170,7 +175,6 @@ async def list_dlq(
             .subquery()
         )
 
-        # Main query: join events with the last failing attempt
         stmt = (
             select(
                 Event.id,
@@ -186,6 +190,7 @@ async def list_dlq(
             )
             .join(last_attempt, Event.id == last_attempt.c.event_id)
             .join(attempt_counts, Event.id == attempt_counts.c.event_id)
+            .where(Event.endpoint_id.in_(ws_ep_ids))
             .order_by(Event.received_at.desc())
             .limit(limit)
             .offset(offset)
@@ -213,16 +218,14 @@ async def list_dlq(
     ]
 
 
-@dlq_router.post("/{event_id}/discard", status_code=200)
-async def discard_dlq_event(event_id: str):
-    """
-    Soft-delete a DLQ event — hide it from the default DLQ view.
-    The event and its delivery attempts remain in the database; this is
-    purely an operator acknowledgment ("I've seen this, don't show it again").
-    """
+@router.post("/dlq/{event_id}/discard", status_code=200)
+async def discard_dlq_event(
+    event_id: str,
+    membership: WorkspaceMembership = Depends(require_workspace_role("admin")),
+):
     ev_id = _parse_uuid(event_id, "event_id")
     async with async_session_factory() as db:
-        event = await _get_event_or_404(db, ev_id)
+        event = await _get_event_or_404(db, ev_id, membership.workspace_id)
         if event.is_discarded:
             return {"status": "already_discarded", "event_id": str(ev_id)}
         event.is_discarded = True
@@ -231,19 +234,15 @@ async def discard_dlq_event(event_id: str):
     return {"status": "discarded", "event_id": str(ev_id)}
 
 
-@dlq_router.post("/{event_id}/restore", status_code=200)
-async def restore_dlq_event(event_id: str):
-    """
-    Undo a discard — bring a discarded event back into the active DLQ view.
-    """
+@router.post("/dlq/{event_id}/restore", status_code=200)
+async def restore_dlq_event(
+    event_id: str,
+    membership: WorkspaceMembership = Depends(require_workspace_role("admin")),
+):
     ev_id = _parse_uuid(event_id, "event_id")
     async with async_session_factory() as db:
-        event = await _get_event_or_404(db, ev_id)
+        event = await _get_event_or_404(db, ev_id, membership.workspace_id)
         event.is_discarded = False
         event.discarded_at = None
         await db.commit()
     return {"status": "restored", "event_id": str(ev_id)}
-
-
-# Export both routers so main.py can mount them
-router = events_router

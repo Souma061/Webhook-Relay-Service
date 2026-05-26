@@ -4,10 +4,12 @@ import type { WebhookEvent, DeliveryAttempt, ToastType } from '../types';
 import { fmt, shortId, statusColor } from '../utils/helpers';
 
 interface EventsPageProps {
+  apiBase: string;
+  apiFetch: typeof fetch;
   toast: (message: string, type?: ToastType) => void;
 }
 
-export const EventsPage = ({ toast }: EventsPageProps) => {
+export const EventsPage = ({ apiBase, apiFetch, toast }: EventsPageProps) => {
   const [events, setEvents] = useState<WebhookEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -15,12 +17,12 @@ export const EventsPage = ({ toast }: EventsPageProps) => {
 
   const fetchEvents = useCallback(async () => {
     try {
-      const res = await fetch('/api/events/?limit=100');
+      const res = await apiFetch(`${apiBase}/events?limit=100`);
       if (res.ok) setEvents(await res.json());
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiBase, apiFetch]);
 
   useEffect(() => {
     fetchEvents();
@@ -38,7 +40,7 @@ export const EventsPage = ({ toast }: EventsPageProps) => {
     }
     setExpanded(eventId);
     if (!attempts[eventId]) {
-      const res = await fetch(`/api/events/${eventId}/attempts`);
+      const res = await apiFetch(`${apiBase}/events/${eventId}/attempts`);
       if (res.ok) {
         const data = await res.json();
         setAttempts(prev => ({ ...prev, [eventId]: data }));
@@ -47,7 +49,7 @@ export const EventsPage = ({ toast }: EventsPageProps) => {
   };
 
   const handleReplay = async (eventId: string) => {
-    const res = await fetch(`/api/events/${eventId}/replay`, { method: 'POST' });
+    const res = await apiFetch(`${apiBase}/events/${eventId}/replay`, { method: 'POST' });
     if (res.ok) toast('Event queued for replay');
     else toast('Replay failed', 'error');
   };

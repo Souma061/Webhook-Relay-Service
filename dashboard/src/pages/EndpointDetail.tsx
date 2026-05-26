@@ -1,29 +1,33 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import { KeyRound, Plus, Trash2 } from 'lucide-react';
+import { Copy, Eye, EyeOff, KeyRound, Plus, Trash2 } from 'lucide-react';
 import type { Endpoint, RouteConfig, ToastType } from '../types';
 import { ConfirmModal, type ConfirmModalConfig } from '../components/ConfirmModal';
 
 interface EndpointDetailProps {
   endpoint: Endpoint;
+  apiBase: string;
+  apiFetch: typeof fetch;
   onBack: () => void;
   toast: (message: string, type?: ToastType) => void;
 }
 
-export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps) => {
+export const EndpointDetail = ({ endpoint, apiBase, apiFetch, onBack, toast }: EndpointDetailProps) => {
   const [routes, setRoutes] = useState<RouteConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddingRoute, setIsAddingRoute] = useState(false);
   const [newRoute, setNewRoute] = useState({ name: '', url: '', method: 'POST', filter_expression: '' });
   const [confirmConfig, setConfirmConfig] = useState<ConfirmModalConfig | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  const [currentSecret, setCurrentSecret] = useState(endpoint.hmac_secret);
 
   const fetchRoutes = useCallback(async () => {
     try {
-      const res = await fetch(`/api/endpoints/${endpoint.id}/routes`);
+      const res = await apiFetch(`${apiBase}/endpoints/${endpoint.id}/routes`);
       if (res.ok) setRoutes(await res.json());
     } finally {
       setLoading(false);
     }
-  }, [endpoint.id]);
+  }, [apiBase, apiFetch, endpoint.id]);
 
   useEffect(() => {
     fetchRoutes();
@@ -39,7 +43,7 @@ export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps)
       method: newRoute.method,
       filter_expression: newRoute.filter_expression.trim() || null,
     };
-    const res = await fetch(`/api/endpoints/${endpoint.id}/routes`, {
+    const res = await apiFetch(`${apiBase}/endpoints/${endpoint.id}/routes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -65,13 +69,23 @@ export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps)
       confirmText: 'Rotate Secret',
       isDanger: true,
       onConfirm: async () => {
-        setConfirmConfig(null);
-        const res = await fetch(`/api/endpoints/${endpoint.id}/rotate`, { method: 'POST' });
-        if (res.ok) toast('Secret rotated — update your webhook source now');
-        else toast('Failed to rotate secret', 'error');
+	        setConfirmConfig(null);
+	        const res = await apiFetch(`${apiBase}/endpoints/${endpoint.id}/rotate`, { method: 'POST' });
+	        if (res.ok) {
+            const data = await res.json();
+            setCurrentSecret(data.hmac_secret);
+            setShowSecret(true);
+            toast('Secret rotated — update your webhook source now');
+          } else toast('Failed to rotate secret', 'error');
       },
       onCancel: () => setConfirmConfig(null),
     });
+  };
+
+  const handleCopySecret = async () => {
+    if (!currentSecret) return;
+    await navigator.clipboard.writeText(currentSecret);
+    toast('Secret copied');
   };
 
   const handleDeleteRoute = (routeId: string) => {
@@ -83,7 +97,7 @@ export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps)
       onConfirm: async () => {
         setConfirmConfig(null);
         setLoading(true);
-        const res = await fetch(`/api/endpoints/routes/${routeId}`, { method: 'DELETE' });
+        const res = await apiFetch(`${apiBase}/routes/${routeId}`, { method: 'DELETE' });
         if (res.ok) {
           fetchRoutes();
           toast('Route deleted');
@@ -115,13 +129,19 @@ export const EndpointDetail = ({ endpoint, onBack, toast }: EndpointDetailProps)
               http://localhost:8000/hooks/{endpoint.id}
             </code>
           </div>
-          <div className="flex justify-between items-center">
-            <span className="text-muted" style={{ fontSize: '0.82rem' }}>HMAC Secret</span>
-            <div className="flex items-center gap-2">
-              <span className="secret-box">{endpoint.hmac_secret}</span>
-              <button className="btn btn-secondary btn-icon" onClick={handleRotateSecret} title="Rotate Secret">
-                <KeyRound size={14} />
-              </button>
+	          <div className="flex justify-between items-center">
+	            <span className="text-muted" style={{ fontSize: '0.82rem' }}>HMAC Secret</span>
+	            <div className="flex items-center gap-2">
+	              <span className="secret-box">{currentSecret ? (showSecret ? currentSecret : '••••••••••••••••••••••••••••••••') : 'Rotate to reveal new secret'}</span>
+	              <button className="btn btn-secondary btn-icon" onClick={() => setShowSecret(!showSecret)} disabled={!currentSecret} title={showSecret ? 'Hide Secret' : 'Reveal Secret'}>
+	                {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+	              </button>
+	              <button className="btn btn-secondary btn-icon" onClick={handleCopySecret} disabled={!currentSecret} title="Copy Secret">
+	                <Copy size={14} />
+	              </button>
+	              <button className="btn btn-secondary btn-icon" onClick={handleRotateSecret} title="Rotate Secret">
+	                <KeyRound size={14} />
+	              </button>
             </div>
           </div>
         </div>

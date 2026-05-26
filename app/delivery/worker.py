@@ -9,6 +9,7 @@ from app.models.delivery_attempt import DeliveryAttempt
 from app.transform.engine import apply_pipeline
 from app.delivery.circuit_breaker import CircuitBreaker
 from app.core.rate_limiter import SlidingWindowRateLimiter
+from app.core.url_security import validate_delivery_url_for_request
 
 rate_limiter = SlidingWindowRateLimiter()
 
@@ -99,6 +100,7 @@ async def _deliver_with_retry(
     response_body = None
 
     try:
+        await asyncio.to_thread(validate_delivery_url_for_request, url)
         async with httpx.AsyncClient(timeout=timeout_ms / 1000) as client:
             resp = await client.request(
                 method=method,
@@ -157,21 +159,21 @@ async def _deliver_with_retry(
             try:
                 from app.core.kafka import get_kafka
                 producer = get_kafka()
-                await producer.send_and_wait(
-                    settings.kafka_topic_dead_letter,
-                    value={
-                        "event_id": str(event_id),
-                        "route_id": str(route["id"]),
-                        "url": url,
-                        "body": body,
-                        "last_error": error,
-                        "last_response_status": response_status,
-                        "attempts": max_retries,
-                    },
-                    key=str(event_id).encode(),
-                )
+                if producer is not None:
+                    await producer.send_and_wait(
+                        settings.kafka_topic_dead_letter,
+                        value={
+                            "event_id": str(event_id),
+                            "route_id": str(route["id"]),
+                            "url": url,
+                            "body": body,
+                            "last_error": error,
+                            "last_response_status": response_status,
+                            "attempts": max_retries,
+                        },
+                        key=str(event_id).encode(),
+                    )
             except RuntimeError:
-                # Kafka not initialised (e.g. running in Phase 1 mode or tests)
                 pass
         return
 """

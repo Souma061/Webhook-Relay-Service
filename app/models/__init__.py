@@ -9,3 +9,5 @@ from app.models.endpoint import Endpoint          # noqa: F401
 from app.models.event import Event                # noqa: F401
 from app.models.route import Route                # noqa: F401
 from app.models.delivery_attempt import DeliveryAttempt  # noqa: F401
+from app.models.user import User                  # noqa: F401
+from app.models.workspace import Workspace, WorkspaceMembership  # noqa: F401

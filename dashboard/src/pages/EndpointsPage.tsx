@@ -6,10 +6,12 @@ import { EndpointDetail } from './EndpointDetail';
 import { ConfirmModal, type ConfirmModalConfig } from '../components/ConfirmModal';
 
 interface EndpointsPageProps {
+  apiBase: string;
+  apiFetch: typeof fetch;
   toast: (message: string, type?: ToastType) => void;
 }
 
-export const EndpointsPage = ({ toast }: EndpointsPageProps) => {
+export const EndpointsPage = ({ apiBase, apiFetch, toast }: EndpointsPageProps) => {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -19,12 +21,12 @@ export const EndpointsPage = ({ toast }: EndpointsPageProps) => {
 
   const fetchEndpoints = useCallback(async () => {
     try {
-      const res = await fetch('/api/endpoints/');
+      const res = await apiFetch(`${apiBase}/endpoints`);
       if (res.ok) setEndpoints(await res.json());
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiBase, apiFetch]);
 
   useEffect(() => {
     fetchEndpoints();
@@ -34,7 +36,7 @@ export const EndpointsPage = ({ toast }: EndpointsPageProps) => {
     e.preventDefault();
     if (!newName.trim()) return;
     setLoading(true);
-    const res = await fetch('/api/endpoints/', {
+    const res = await apiFetch(`${apiBase}/endpoints`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newName }),
@@ -59,7 +61,7 @@ export const EndpointsPage = ({ toast }: EndpointsPageProps) => {
       onConfirm: async () => {
         setConfirmConfig(null);
         setLoading(true);
-        const res = await fetch(`/api/endpoints/${id}`, { method: 'DELETE' });
+        const res = await apiFetch(`${apiBase}/endpoints/${id}`, { method: 'DELETE' });
         if (res.ok) {
           fetchEndpoints();
           toast('Endpoint deleted');
@@ -75,8 +77,10 @@ export const EndpointsPage = ({ toast }: EndpointsPageProps) => {
   if (selected) {
     return (
       <EndpointDetail
-        endpoint={selected}
-        onBack={() => {
+	        endpoint={selected}
+	        apiBase={apiBase}
+	        apiFetch={apiFetch}
+	        onBack={() => {
           setSelected(null);
           setLoading(true);
           fetchEndpoints();

@@ -4,10 +4,12 @@ import type { DlqEvent, ToastType } from '../types';
 import { fmt, shortId } from '../utils/helpers';
 
 interface DlqPageProps {
+  apiBase: string;
+  apiFetch: typeof fetch;
   toast: (message: string, type?: ToastType) => void;
 }
 
-export const DlqPage = ({ toast }: DlqPageProps) => {
+export const DlqPage = ({ apiBase, apiFetch, toast }: DlqPageProps) => {
   const [items, setItems] = useState<DlqEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDiscarded, setShowDiscarded] = useState(false);
@@ -15,12 +17,12 @@ export const DlqPage = ({ toast }: DlqPageProps) => {
 
   const fetchDlq = useCallback(async (includeDiscarded = showDiscarded) => {
     try {
-      const res = await fetch(`/api/dlq/?include_discarded=${includeDiscarded}`);
+      const res = await apiFetch(`${apiBase}/dlq?include_discarded=${includeDiscarded}`);
       if (res.ok) setItems(await res.json());
     } finally {
       setLoading(false);
     }
-  }, [showDiscarded]);
+  }, [apiBase, apiFetch, showDiscarded]);
 
   useEffect(() => {
     fetchDlq();
@@ -40,7 +42,7 @@ export const DlqPage = ({ toast }: DlqPageProps) => {
 
   const handleReplay = async (eventId: string) => {
     setLoading(true);
-    const res = await fetch(`/api/events/${eventId}/replay`, { method: 'POST' });
+    const res = await apiFetch(`${apiBase}/events/${eventId}/replay`, { method: 'POST' });
     if (res.ok) {
       toast('Event queued for replay');
       fetchDlq();
@@ -52,7 +54,7 @@ export const DlqPage = ({ toast }: DlqPageProps) => {
 
   const handleDiscard = async (eventId: string) => {
     setLoading(true);
-    const res = await fetch(`/api/dlq/${eventId}/discard`, { method: 'POST' });
+    const res = await apiFetch(`${apiBase}/dlq/${eventId}/discard`, { method: 'POST' });
     if (res.ok) {
       toast('Event discarded');
       fetchDlq();
@@ -64,7 +66,7 @@ export const DlqPage = ({ toast }: DlqPageProps) => {
 
   const handleRestore = async (eventId: string) => {
     setLoading(true);
-    const res = await fetch(`/api/dlq/${eventId}/restore`, { method: 'POST' });
+    const res = await apiFetch(`${apiBase}/dlq/${eventId}/restore`, { method: 'POST' });
     if (res.ok) {
       toast('Event restored to queue');
       fetchDlq();

@@ -20,8 +20,22 @@ async def get_session() -> AsyncSession:
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Zero-downtime schema migrations for new columns.
+        # ADD COLUMN IF NOT EXISTS is idempotent — safe to run on every startup.
         await conn.execute(
             text("ALTER TABLE routes ADD COLUMN IF NOT EXISTS filter_expression TEXT;")
+        )
+        await conn.execute(
+            text("ALTER TABLE events ADD COLUMN IF NOT EXISTS request_headers JSONB;")
+        )
+        await conn.execute(
+            text("ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES workspaces(id);")
+        )
+        await conn.execute(
+            text("ALTER TABLE events ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'pending';")
+        )
+        await conn.execute(
+            text("ALTER TABLE events ADD COLUMN IF NOT EXISTS retry_at TIMESTAMPTZ;")
         )
 """
 database.py — SQLAlchemy async engine and session factory.
