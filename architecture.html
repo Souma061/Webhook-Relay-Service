@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webhook Relay Architecture</title>
+    <style>
+        :root {
+            --bg-color: #0f1115;
+            --card-bg: #1a1d24;
+            --border-color: #2d3139;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-purple: #8b5cf6;
+            --accent-orange: #f59e0b;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 60px;
+        }
+
+        .architecture-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            width: 100%;
+            max-width: 1400px;
+            position: relative;
+            flex-wrap: wrap;
+        }
+
+        .column {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            align-items: center;
+            position: relative;
+            z-index: 2;
+        }
+
+        .node {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            width: 260px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            position: relative;
+            transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+        }
+
+        .node:hover {
+            transform: translateY(-5px);
+            border-color: var(--accent-blue);
+            box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.3);
+        }
+
+        .node.source { border-top: 4px solid var(--accent-blue); }
+        .node.gateway { border-top: 4px solid var(--accent-purple); }
+        .node.kafka { border-top: 4px solid var(--accent-orange); }
+        .node.worker { border-top: 4px solid var(--accent-green); }
+        .node.db { border-top: 4px solid var(--text-secondary); }
+        .node.destination { border-top: 4px solid var(--accent-blue); }
+
+        .node-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .node-desc {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--accent-blue);
+            margin-top: 12px;
+        }
+
+        .badge.fast { background: rgba(16, 185, 129, 0.1); color: var(--accent-green); }
+        .badge.async { background: rgba(139, 92, 246, 0.1); color: var(--accent-purple); }
+        
+        /* Arrows */
+        .arrow-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--border-color);
+            font-size: 2rem;
+            font-weight: bold;
+            animation: pulse 2s infinite;
+        }
+
+        .arrow-down {
+            color: var(--border-color);
+            font-size: 2rem;
+            text-align: center;
+            line-height: 0.5;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.3; }
+            50% { opacity: 1; color: var(--accent-blue); }
+            100% { opacity: 0.3; }
+        }
+
+        /* Group Box */
+        .group-box {
+            border: 2px dashed var(--border-color);
+            border-radius: 16px;
+            padding: 30px;
+            position: relative;
+            display: flex;
+            gap: 40px;
+            background: rgba(26, 29, 36, 0.3);
+        }
+
+        .group-label {
+            position: absolute;
+            top: -12px;
+            left: 24px;
+            background: var(--bg-color);
+            padding: 0 12px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        /* Utility classes */
+        .flex-row { display: flex; gap: 40px; align-items: center; }
+        .flex-col { display: flex; flex-direction: column; gap: 20px; align-items: center; }
+
+    </style>
+</head>
+<body>
+
+    <h1>Decoupled Webhook Relay</h1>
+    <p class="subtitle">High-performance, event-driven architecture designed for zero data loss.</p>
+
+    <div class="architecture-container">
+        
+        <!-- Column 1: Source -->
+        <div class="column">
+            <div class="node source">
+                <div class="node-header">🌍 Webhook Sender</div>
+                <div class="node-desc">External service generating events (e.g., Stripe, GitHub, Shopify).</div>
+                <div class="badge">POST /hooks/{id}</div>
+            </div>
+        </div>
+
+        <div class="arrow-container">➔</div>
+
+        <!-- Column 2: Ingestion Layer -->
+        <div class="group-box">
+            <div class="group-label">Ingestion Layer (Synchronous)</div>
+            
+            <div class="column">
+                <div class="node gateway">
+                    <div class="node-header">⚡ FastAPI Gateway</div>
+                    <div class="node-desc">Validates HMAC signatures, checks idempotency, and immediately returns 202 Accepted to free up the sender.</div>
+                    <div class="badge fast">&lt; 10ms Latency</div>
+                </div>
+            </div>
+
+            <div class="column" style="gap: 15px;">
+                <div class="node db" style="width: 200px; padding: 16px;">
+                    <div class="node-header" style="font-size: 1rem;">🐘 PostgreSQL</div>
+                    <div class="node-desc" style="font-size: 0.8rem;">Stores configuration & raw events.</div>
+                </div>
+                <div class="node db" style="width: 200px; padding: 16px;">
+                    <div class="node-header" style="font-size: 1rem;">🔴 Redis</div>
+                    <div class="node-desc" style="font-size: 0.8rem;">Idempotency cache (prevents dupes).</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="arrow-container">➔</div>
+
+        <!-- Column 3: The Message Bus -->
+        <div class="column">
+            <div class="node kafka">
+                <div class="node-header">📨 Apache Kafka</div>
+                <div class="node-desc">Distributed event streaming platform. Acts as a massive buffer if destinations go offline.</div>
+                <div class="badge async">Topic: raw-events</div>
+                <div class="badge async">Topic: transformed-events</div>
+            </div>
+        </div>
+
+        <div class="arrow-container">➔</div>
+
+        <!-- Column 4: Processing Layer -->
+        <div class="group-box">
+            <div class="group-label">Processing Layer (Asynchronous)</div>
+            <div class="column">
+                <div class="node worker">
+                    <div class="node-header">⚙️ Transform Worker</div>
+                    <div class="node-desc">Consumes 'raw-events'. Looks up configured routing rules and prepares the outbound payloads.</div>
+                    <div class="arrow-down">↓</div>
+                </div>
+                <div class="node worker">
+                    <div class="node-header">🚀 Delivery Worker</div>
+                    <div class="node-desc">Consumes 'transformed-events'. Handles external HTTP requests, rate limiting, circuit breakers, and retries.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="arrow-container">➔</div>
+
+        <!-- Column 5: Destination -->
+        <div class="column">
+            <div class="node destination">
+                <div class="node-header">🎯 Destination Server</div>
+                <div class="node-desc">Your internal microservices or user applications receiving the final, reliable webhook delivery.</div>
+                <div class="badge">Safe & Throttled</div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>

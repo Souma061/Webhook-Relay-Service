@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -8,7 +9,7 @@ from sqlalchemy import select
 from app.core.database import async_session_factory
 from app.core.config import settings
 from app.core.redis import get_redis
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import create_access_token, decode_access_token, hash_password, verify_password, oauth2_scheme
 from app.middleware.rbac import get_current_user
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMembership
@@ -114,3 +115,34 @@ async def login(body: LoginRequest, request: Request):
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.post("/logout", status_code=200)
+async def logout(
+    user: User = Depends(get_current_user),
+    token: str = Depends(oauth2_scheme),
+):
+    """Revoke the current access token by adding its jti to a Redis blocklist.
+
+    The key expires automatically when the token would have expired naturally,
+    so the blocklist never grows beyond the set of currently-valid-but-revoked tokens.
+    """
+    payload = decode_access_token(token)
+    jti = payload.get("jti")
+    exp = payload.get("exp")  # Unix timestamp (seconds)
+
+    if jti and exp:
+        ttl = int(exp - time.time())
+        if ttl > 0:
+            try:
+                redis = get_redis()
+                await redis.set(f"revoked:jti:{jti}", "1", ex=ttl)
+            except RuntimeError:
+                # Redis unavailable — log but still return success so the client
+                # drops the token; it will expire naturally.
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Redis unavailable during logout — jti %s not blocklisted", jti
+                )
+
+    return {"detail": "logged out"}

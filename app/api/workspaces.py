@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -21,6 +22,13 @@ from app.schemas.auth import (
 router = APIRouter(prefix="/api/workspaces", tags=["Workspaces"])
 
 _SLUGIFY_RE = re.compile(r"[^a-z0-9-]")
+
+
+def _parse_uuid(value: str, label: str = "id") -> uuid.UUID:
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"invalid {label} format")
 
 
 def _slugify(name: str) -> str:
@@ -181,12 +189,7 @@ async def update_member_role(
     if body.role not in ("admin", "member", "viewer"):
         raise HTTPException(400, "role must be admin, member, or viewer")
 
-    try:
-        target_uid = re.findall(r"[0-9a-f-]+", user_id)[0]
-        import uuid as uuid_pkg
-        target_uid = uuid_pkg.UUID(target_uid)
-    except (IndexError, ValueError):
-        raise HTTPException(400, "invalid user id")
+    target_uid = _parse_uuid(user_id, "user_id")
 
     async with async_session_factory() as db:
         membership = await db.get(
@@ -216,11 +219,7 @@ async def remove_member(
     user_id: str,
     _membership: WorkspaceMembership = Depends(require_workspace_role("admin")),
 ):
-    try:
-        import uuid as uuid_pkg
-        target_uid = uuid_pkg.UUID(user_id)
-    except ValueError:
-        raise HTTPException(400, "invalid user id")
+    target_uid = _parse_uuid(user_id, "user_id")
 
     async with async_session_factory() as db:
         membership = await db.get(

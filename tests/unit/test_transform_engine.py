@@ -93,11 +93,13 @@ class TestJmesPath:
         result = apply_pipeline(pipeline, payload)
         assert result == [1]
 
-    def test_jmespath_no_match_returns_none(self):
+    def test_jmespath_no_match_preserves_payload(self):
+        """A no-match jmespath expression should preserve the current payload,
+        not replace it with None (which would silently wipe data mid-pipeline)."""
         payload = {"foo": "bar"}
         pipeline = [{"type": "jmespath", "expression": "nonexistent"}]
         result = apply_pipeline(pipeline, payload)
-        assert result is None
+        assert result == payload  # payload preserved, not None
 
 
 # ── Multi-step pipelines ───────────────────────────────────────────────────────

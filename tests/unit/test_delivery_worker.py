@@ -58,6 +58,20 @@ def mock_redis_client():
     core_redis.redis_client = None
 
 
+@pytest.fixture(autouse=True)
+def mock_url_validator():
+    """Skip the SSRF/DNS check in unit tests — it's tested separately.
+
+    The test ROUTE uses http:// which would be rejected by validate_delivery_url_for_request.
+    Unit tests focus on retry/audit/DLQ logic, not URL security enforcement.
+    """
+    with patch(
+        "app.delivery.worker.validate_delivery_url_for_request",
+        return_value=None,
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_db_session():
     """Mock async DB session so DeliveryAttempt inserts are no-ops."""

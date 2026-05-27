@@ -6,11 +6,14 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy import select
 
 from app.core.database import async_session_factory
+from app.core.redis import get_redis
 from app.core.security import decode_access_token, oauth2_scheme
 from app.models.user import User
 from app.models.workspace import WorkspaceMembership
 
 ROLE_HIERARCHY = {"viewer": 0, "member": 1, "admin": 2, "owner": 3}
+
+_REVOKED_PREFIX = "revoked:jti:"
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
@@ -18,6 +21,27 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token payload")
+
+    # ── Revocation check ──────────────────────────────────────────────────────
+    # If this token's jti appears in the Redis blocklist it was explicitly
+    # logged out and must be rejected, even if the signature is still valid.
+    jti = payload.get("jti")
+    if jti:
+        try:
+            redis = get_redis()
+            if await redis.exists(f"{_REVOKED_PREFIX}{jti}"):
+                raise HTTPException(
+                    status.HTTP_401_UNAUTHORIZED,
+                    "token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except RuntimeError:
+            # Redis unavailable — fail open to avoid locking out all users,
+            # but log so ops can investigate.
+            import logging
+            logging.getLogger(__name__).warning(
+                "Redis unavailable during jti revocation check — skipping"
+            )
 
     async with async_session_factory() as db:
         user = await db.get(User, uuid_pkg.UUID(user_id))
