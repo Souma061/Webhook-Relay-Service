@@ -98,13 +98,10 @@ async def receive_webhook(
         if idempotency_key:
             redis = get_redis()
             dedup_key = f"idem:{endpoint.id}:{idempotency_key}"
-            already_seen = await redis.set(dedup_key, "1", nx=True, ex=settings.idempotency_ttl_s)# this will return True if the key was set (i.e., not seen before), or False if it already exists
+            already_seen = await redis.set(dedup_key, "1", nx=True, ex=settings.idempotency_ttl_s)
             if not already_seen:
                 return {"status": "duplicate", "event_id": None}
 
-        # Capture all request headers with lowercased keys for consistent
-        # JMESPath access (e.g. headers."x-github-event" == 'push').
-        # We exclude headers that are large, irrelevant, or security-sensitive.
         _EXCLUDED_HEADERS = {"authorization", "cookie", "set-cookie"}
         request_headers = {
             key.lower(): value
@@ -123,10 +120,6 @@ async def receive_webhook(
         await db.commit()
         await db.refresh(event)
 
-    # ── Phase 2: publish a lightweight message to Kafka ────────────────────────
-    # The transform worker will pick this up, load the routes from DB,
-    # apply transforms, and publish one message per route to transformed-events.
-    # Fire-and-forget — the event is already persisted; Kafka is best-effort.
     async def _publish():
         producer = get_kafka()
         if producer is None:
@@ -156,16 +149,3 @@ async def receive_webhook(
     asyncio.create_task(_publish())
 
     return {"status": "accepted", "event_id": str(event.id)}
-"""
-handler.py — Webhook ingestion endpoint.
-
-Accepts POST requests at /hooks/{endpoint_id} and:
-1. Looks up the endpoint config from PostgreSQL
-2. Verifies HMAC-SHA256 signature if the endpoint has a secret
-3. Checks idempotency key via Redis (prevents duplicate processing)
-4. Stores the raw event in the events table
-5. Publishes a light message (event_id, endpoint_id) to Kafka raw-events topic
-6. Returns 202 Accepted immediately
-
-Phase 2: delivery is fully decoupled — transform + delivery run in separate worker processes.
-"""

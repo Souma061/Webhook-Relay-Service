@@ -38,9 +38,6 @@ def _route_out(route: Route) -> RouteOut:
     )
 
 
-# ── Endpoint CRUD ─────────────────────────────────────────────────────────────
-
-
 @router.get("/endpoints", response_model=list[EndpointOut])
 async def list_endpoints(
     membership: WorkspaceMembership = Depends(require_workspace_role("viewer")),
@@ -132,9 +129,6 @@ async def rotate_secret(
         ep.hmac_secret = new_secret
         await db.commit()
         return SecretRotateOut(hmac_secret=new_secret)
-
-
-# ── Route CRUD ────────────────────────────────────────────────────────────────
 
 
 @router.get("/endpoints/{endpoint_id}/routes", response_model=list[RouteOut])

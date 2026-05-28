@@ -27,18 +27,3 @@ class Route(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     endpoint = relationship("Endpoint", back_populates="routes")
-"""
-route.py — Route ORM model.
-
-A route defines one delivery target for an endpoint. Each incoming
-webhook fans out to all active routes on the endpoint.
-
-Key fields:
-- url: where to send the HTTP request
-- transform_pipeline: list of transform steps (e.g., [{"type": "template", ...}])
-- max_retries / retry_backoff_ms: retry policy for this destination
-- timeout_ms: HTTP request timeout per destination
-
-Relationships:
-- Many Routes → One Endpoint
-"""

@@ -58,16 +58,3 @@ def validate_production_settings() -> None:
 
     if settings.allow_insecure_delivery_urls:
         raise RuntimeError("RELAY_ALLOW_INSECURE_DELIVERY_URLS must be false in production")
-"""
-config.py — Application configuration via environment variables.
-
-Uses pydantic-settings to load config from env vars prefixed with RELAY_.
-Fallback defaults work for local dev. Override via .env file or system env.
-
-Key settings:
-- database_url: PostgreSQL connection string (asyncpg driver)
-- redis_url: Redis connection string
-- max_delivery_attempts: how many times to retry a failed delivery
-- retry_backoff_ms: base delay for exponential backoff
-- rate_limit_rpm: max requests per minute per destination
-"""

@@ -4,8 +4,6 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr
 
 
-# ── User ────────────────────────────────────────────────────────────────────────
-
 class UserCreate(BaseModel):
     email: str
     password: str
@@ -22,8 +20,6 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── Auth ────────────────────────────────────────────────────────────────────────
-
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -34,8 +30,6 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: UserOut
 
-
-# ── Workspace ───────────────────────────────────────────────────────────────────
 
 class WorkspaceCreate(BaseModel):
     name: str

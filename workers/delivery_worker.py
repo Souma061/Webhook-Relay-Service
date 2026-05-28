@@ -1,20 +1,3 @@
-"""
-delivery_worker.py — Phase 2 Delivery Consumer.
-
-Reads transformed-events from Kafka and makes HTTP calls to destination URLs.
-Delegates to the existing _deliver_with_retry() logic which handles:
-  - Circuit breaker per destination
-  - Sliding-window rate limiter per destination
-  - Exponential backoff with jitter
-  - Full audit logging to PostgreSQL
-  - Dead-letter queue on retry exhaustion
-
-Consumer group: relay-delivery-group
-  Input topic:  transformed-events
-
-Run standalone:
-    python -m workers.delivery_worker
-"""
 import asyncio
 import json
 import logging
@@ -27,18 +10,17 @@ from aiokafka import AIOKafkaConsumer
 os.environ.setdefault("RELAY_DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/webhook_relay")
 os.environ.setdefault("RELAY_REDIS_URL", "redis://localhost:6379/0")
 
-from app.core.config import settings  # noqa: E402
-from app.core.database import init_db  # noqa: E402
-from app.core.redis import init_redis, close_redis  # noqa: E402
-import app.models  # noqa: E402 — registers all ORM models so relationships resolve
-from app.delivery.worker import _deliver_with_retry  # noqa: E402
+from app.core.config import settings
+from app.core.database import init_db
+from app.core.redis import init_redis, close_redis
+import app.models
+from app.delivery.worker import _deliver_with_retry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [delivery-worker] %(message)s")
 logger = logging.getLogger(__name__)
 
 _stop = asyncio.Event()
 
-# Global semaphore: at most 50 concurrent HTTP calls across all destinations
 _GLOBAL_SEMAPHORE = asyncio.Semaphore(50)
 
 
@@ -48,7 +30,6 @@ def _handle_signal(*_):
 
 
 async def run():
-    """Main consumer loop."""
     await init_db()
     await init_redis()
 
@@ -76,7 +57,6 @@ async def run():
                 break
 
             data = msg.value
-            # Minimal validation before spawning a task
             if not data.get("event_id") or not data.get("route_id") or not data.get("url"):
                 logger.warning("Skipping malformed delivery message: %s", data)
                 continue
@@ -85,7 +65,6 @@ async def run():
             pending.add(task)
             task.add_done_callback(pending.discard)
 
-        # Wait for all in-flight deliveries to complete before shutdown
         if pending:
             logger.info("Waiting for %d in-flight deliveries to finish…", len(pending))
             await asyncio.gather(*pending, return_exceptions=True)
@@ -97,10 +76,8 @@ async def run():
 
 
 async def _dispatch(data: dict):
-    """Acquire the global semaphore then run _deliver_with_retry."""
     async with _GLOBAL_SEMAPHORE:
         try:
-            # Build a route dict that matches what _deliver_with_retry expects
             route = {
                 "id": uuid.UUID(data["route_id"]),
                 "url": data["url"],

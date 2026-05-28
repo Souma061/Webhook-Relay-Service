@@ -1,0 +1,57 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+
+# ── Secrets / local config ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Dev & test artifacts ──────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+*.session.sql
+
+# ── Demo / scratch scripts ────────────────────────────────────────────────────
+demo_*.py
+demonstration.py
+simulate_dlq.py
+test_webhook.py
+e2e_test.py
+
+# ── Docs (large, not needed in image) ────────────────────────────────────────
+DEEP_DIVE.md
+PRD.md
+phase1_audit.md
+phase2_roadmap.md
+STRUCTURE.md
+blog.html
+architecture.html
+*.md
+!README.md
+
+# ── VCS & IDE ─────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+.vscode/
+.codex/
+.agents/
+
+# ── Dashboard (built separately) ─────────────────────────────────────────────
+dashboard/
+
+# ── K8s manifests (not needed inside image) ───────────────────────────────────
+k8s/
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+tests/

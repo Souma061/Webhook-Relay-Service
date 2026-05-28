@@ -44,9 +44,6 @@ async def _list_workspace_endpoint_ids(db, ws_id: uuid.UUID) -> list[uuid.UUID]:
     return result.scalars().all()
 
 
-# ── Events ─────────────────────────────────────────────────────────────────────
-
-
 @router.get("/events", response_model=list[EventOut])
 async def list_events(
     endpoint_id: Annotated[str | None, Query()] = None,
@@ -126,9 +123,6 @@ async def replay_event(
     except Exception:
         raise HTTPException(503, "Failed to publish replay message to Kafka")
     return {"status": "replaying", "event_id": str(event.id)}
-
-
-# ── Dead Letter Queue ──────────────────────────────────────────────────────────
 
 
 @router.get("/dlq", response_model=list[DlqEventOut])

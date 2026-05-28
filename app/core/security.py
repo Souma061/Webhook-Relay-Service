@@ -35,7 +35,6 @@ def create_access_token(data: dict[str, Any], expires_delta: int | None = None) 
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=expires_delta or settings.jwt_expire_minutes
     )
-    # jti (JWT ID) — unique per token; used by the revocation blocklist on logout.
     to_encode.update({"exp": expire, "jti": str(uuid.uuid4())})
     return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 

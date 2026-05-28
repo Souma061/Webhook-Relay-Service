@@ -119,7 +119,7 @@ function App() {
             <Route path="/endpoints" element={<EndpointsPage apiBase={apiBase} apiFetch={authedFetch} toast={toast} />} />
             <Route path="/events"    element={<EventsPage apiBase={apiBase} apiFetch={authedFetch} toast={toast} />} />
             <Route path="/dlq"       element={<DlqPage apiBase={apiBase} apiFetch={authedFetch} toast={toast} />} />
-            <Route path="/settings"  element={<SettingsPage />} />
+            <Route path="/settings"  element={<SettingsPage user={user!} workspace={workspace} apiFetch={authedFetch} onLogout={logout} toast={toast} />} />
             <Route path="*"          element={<div className="animate-in"><h1 className="page-title">404</h1><p className="page-sub mt-2">Page not found.</p></div>} />
           </Routes>
         </main>

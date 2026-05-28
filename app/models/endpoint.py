@@ -22,16 +22,3 @@ class Endpoint(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     routes = relationship("Route", back_populates="endpoint", cascade="all, delete-orphan")
-"""
-endpoint.py — Endpoint ORM model.
-
-An endpoint represents a single webhook source (e.g., "Stripe Payments").
-Each endpoint has:
-- A unique URL: /hooks/{id}
-- An HMAC secret for signature verification
-- One or more Routes that define where to deliver and how to transform
-- IP allowlist (optional) for restricting senders
-
-Relationships:
-- One Endpoint → Many Routes (cascade delete)
-"""

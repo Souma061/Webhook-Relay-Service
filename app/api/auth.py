@@ -122,11 +122,6 @@ async def logout(
     user: User = Depends(get_current_user),
     token: str = Depends(oauth2_scheme),
 ):
-    """Revoke the current access token by adding its jti to a Redis blocklist.
-
-    The key expires automatically when the token would have expired naturally,
-    so the blocklist never grows beyond the set of currently-valid-but-revoked tokens.
-    """
     payload = decode_access_token(token)
     jti = payload.get("jti")
     exp = payload.get("exp")  # Unix timestamp (seconds)
@@ -138,8 +133,6 @@ async def logout(
                 redis = get_redis()
                 await redis.set(f"revoked:jti:{jti}", "1", ex=ttl)
             except RuntimeError:
-                # Redis unavailable — log but still return success so the client
-                # drops the token; it will expire naturally.
                 import logging
                 logging.getLogger(__name__).warning(
                     "Redis unavailable during logout — jti %s not blocklisted", jti

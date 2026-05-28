@@ -22,9 +22,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     if not user_id:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token payload")
 
-    # ── Revocation check ──────────────────────────────────────────────────────
-    # If this token's jti appears in the Redis blocklist it was explicitly
-    # logged out and must be rejected, even if the signature is still valid.
     jti = payload.get("jti")
     if jti:
         try:
@@ -36,8 +33,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
                     headers={"WWW-Authenticate": "Bearer"},
                 )
         except RuntimeError:
-            # Redis unavailable — fail open to avoid locking out all users,
-            # but log so ops can investigate.
             import logging
             logging.getLogger(__name__).warning(
                 "Redis unavailable during jti revocation check — skipping"

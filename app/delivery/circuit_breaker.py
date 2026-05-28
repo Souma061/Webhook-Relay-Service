@@ -48,14 +48,3 @@ class CircuitBreaker:
         if count >= self.threshold:
             await redis.set(f"cb:{self.url}:state", "OPEN")
             await redis.set(f"cb:{self.url}:open_since", str(time.time()))
-"""
-circuit_breaker.py — Circuit breaker per destination URL.
-
-Three states:
-- CLOSED: normal operation, requests pass through
-- OPEN: N consecutive failures → reject all requests for cooldown period
-- HALF_OPEN: after cooldown, let one request through to test recovery
-
-Uses Redis for shared state across multiple worker instances.
-State machine transitions on record_success() and record_failure().
-"""

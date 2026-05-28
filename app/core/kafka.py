@@ -13,12 +13,6 @@ _producer: AIOKafkaProducer | None = None
 
 
 async def init_kafka() -> AIOKafkaProducer | None:
-    """Start the global Kafka producer.
-
-    Returns the producer on success, or None if Kafka is unreachable.
-    The app continues to serve webhooks either way — events are stored
-    in PostgreSQL and can be replayed later when Kafka recovers.
-    """
     global _producer
     _producer = AIOKafkaProducer(
         bootstrap_servers=settings.kafka_bootstrap_servers,
@@ -56,5 +50,4 @@ async def close_kafka():
 
 
 def get_kafka() -> AIOKafkaProducer | None:
-    """Return the running producer, or None if Kafka is unavailable."""
     return _producer

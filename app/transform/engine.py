@@ -98,21 +98,3 @@ def _eval_expr(expr: str, payload: dict) -> str:
         except (ValueError, ZeroDivisionError):
             return str(current)
     return str(current)
-"""
-engine.py — Transform pipeline engine.
-
-Executes a sequence of transform steps against a payload.
-
-Supported step types:
-- passthrough: return payload unchanged (useful as a no-op)
-- template: apply {{var}} substitution with basic arithmetic (e.g., {{data.amount / 100}})
-- jmespath: run a JMESPath expression to select/restructure data
-
-The _eval_expr function supports:
-- Dot notation: data.customer_email
-- Division: data.amount_total / 100
-- Nested access: data.items[0].price
-
-This is intentionally simple for Phase 1. Expression safety is
-maintained by avoiding eval() — only literal dot access and division.
-"""

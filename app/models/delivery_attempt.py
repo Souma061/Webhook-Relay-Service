@@ -22,18 +22,3 @@ class DeliveryAttempt(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-"""
-delivery_attempt.py — DeliveryAttempt ORM model (audit log).
-
-Records every HTTP call made by the relay. One event can have multiple
-delivery attempts (one per retry) across multiple routes.
-
-Key fields:
-- attempt_number: 0-indexed retry counter
-- request_url / request_body: what was sent
-- response_status / response_body: what came back
-- error: exception message if the request failed entirely
-- duration_ms: how long the HTTP call took
-
-This table powers the audit trail, stats dashboard, and failure analysis.
-"""

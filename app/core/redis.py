@@ -22,14 +22,3 @@ def get_redis() -> Redis:
     if redis_client is None:
         raise RuntimeError("Redis not initialized")
     return redis_client
-"""
-redis.py — Async Redis client lifecycle.
-
-Manages a singleton Redis connection pool for the app.
-Used by: idempotency check, rate limiter, circuit breaker.
-
-Export:
-- init_redis(): call during app startup
-- close_redis(): call during app shutdown
-- get_redis(): get the Redis instance (raises if not initialized)
-"""

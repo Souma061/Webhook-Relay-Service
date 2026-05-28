@@ -14,21 +14,7 @@ from app.core.url_security import validate_delivery_url_for_request
 rate_limiter = SlidingWindowRateLimiter()
 
 
-# async def schedule_deliveries(event, routes: list[dict]):
-#     for route in routes:
-#         body = event.request_body
-#         transform_pipeline = route.get("transform_pipeline")
-#         if transform_pipeline:
-#             body = apply_pipeline(transform_pipeline, body)
-
-#         await _deliver_with_retry(
-#             event_id=event.id,
-#             route=route,
-#             body=body,
-#             attempt=0,
-#         )
-
-async def schedule_deliveries(event,routes: list[dict]):
+async def schedule_deliveries(event, routes: list[dict]):
     tasks = []
     for route in routes:
         body = event.request_body
@@ -44,7 +30,6 @@ async def schedule_deliveries(event,routes: list[dict]):
         ))
 
     await asyncio.gather(*tasks, return_exceptions=True)
-    # Note: return_exceptions=True prevents one failing delivery from cancelling the others. In Phase 2, we may want more robust error handling/logging here.
 
 
 async def _deliver_with_retry(
@@ -54,7 +39,7 @@ async def _deliver_with_retry(
     import asyncio
     import random
 
-    MAX_RATE_LIMIT_WAITS = 5  # safety cap: give up after 5 consecutive rate-limit waits
+    MAX_RATE_LIMIT_WAITS = 5
 
     url = route["url"]
     method = route.get("method", "POST")
@@ -80,7 +65,6 @@ async def _deliver_with_retry(
 
     if not await rate_limiter.allow_request(url):
         if rate_limit_waits >= MAX_RATE_LIMIT_WAITS:
-            # Destination is persistently over-limit — log and abandon
             async with async_session_factory() as db:
                 db.add(DeliveryAttempt(
                     event_id=event_id, route_id=route["id"], attempt_number=attempt,
@@ -89,7 +73,6 @@ async def _deliver_with_retry(
                 ))
                 await db.commit()
             return
-        # Wait 1 s then retry the same attempt (not a delivery failure, so attempt stays)
         await asyncio.sleep(1)
         await _deliver_with_retry(event_id, route, body, attempt, rate_limit_waits + 1)
         return
@@ -153,9 +136,6 @@ async def _deliver_with_retry(
             await asyncio.sleep(delay)
             await _deliver_with_retry(event_id, route, body, next_attempt)
         else:
-            # ── All retries exhausted — publish to Dead Letter Queue ──────────
-            # The DLQ consumer (or an operator) can replay this via
-            # POST /api/events/{event_id}/replay later.
             try:
                 from app.core.kafka import get_kafka
                 producer = get_kafka()
@@ -176,20 +156,4 @@ async def _deliver_with_retry(
             except RuntimeError:
                 pass
         return
-"""
-worker.py — Delivery worker with retry logic.
 
-Runs as a Kafka consumer task in Phase 2 (delivery_worker.py calls _deliver_with_retry directly).
-
-Flow:
-1. Apply transform pipeline on the event payload
-2. Make HTTP request to the destination URL
-3. Log the delivery attempt (success or failure) to PostgreSQL
-4. On success: done
-5. On 4xx error: abandon (bad config, retrying won't help)
-6. On 5xx/network error: retry with exponential backoff + jitter
-7. After exhausting retries: publish to Kafka dead-letter topic for manual replay
-
-The backoff uses: base_ms × 2^attempt + random jitter (0-50%)
-Jitter prevents the thundering herd problem when many events fail at once.
-"""

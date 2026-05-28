@@ -1,28 +1,3 @@
-"""
-transform_worker.py — Phase 2/3 Transform & Filter Consumer.
-
-Reads raw-events from Kafka, loads route configs from PostgreSQL, evaluates
-route filter expressions, applies the transform pipeline, and produces one
-transformed-events message per matching route for the delivery worker.
-
-Pipeline for each event:
-  1. Fetch the full Event record from DB (body + headers).
-  2. Fetch all active Routes for the endpoint.
-  3. For each route:
-     a. Evaluate filter_expression against {body, headers} context.
-        → No match  : skip route, log it, move on.
-        → Match / no filter: continue to step b.
-     b. Apply transform_pipeline to the body (if configured).
-     c. Publish one message to `transformed-events` topic.
-
-Consumer group : relay-transform-group
-Input topic    : raw-events
-Output topic   : transformed-events
-
-Run standalone:
-    python -m workers.transform_worker
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -35,19 +10,18 @@ import uuid
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from sqlalchemy import select
 
-# ── Bootstrap settings & DB before importing app modules ──────────────────────
 os.environ.setdefault(
     "RELAY_DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/webhook_relay",
 )
 
-from app.core.config import settings                        # noqa: E402
-from app.core.database import async_session_factory, init_db  # noqa: E402
-import app.models                                           # noqa: E402  registers all ORM models
-from app.models.event import Event                          # noqa: E402
-from app.models.route import Route                          # noqa: E402
-from app.transform.engine import apply_pipeline             # noqa: E402
-from app.transform.filter import route_matches_event        # noqa: E402
+from app.core.config import settings
+from app.core.database import async_session_factory, init_db
+import app.models
+from app.models.event import Event
+from app.models.route import Route
+from app.transform.engine import apply_pipeline
+from app.transform.filter import route_matches_event
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,17 +32,12 @@ logger = logging.getLogger(__name__)
 _stop = asyncio.Event()
 
 
-# ── Signal handling ────────────────────────────────────────────────────────────
-
 def _handle_signal(*_) -> None:
     logger.info("Shutdown signal received — stopping consumer loop")
     _stop.set()
 
 
-# ── Main consumer loop ─────────────────────────────────────────────────────────
-
 async def run() -> None:
-    """Start the consumer loop. Runs until a SIGINT/SIGTERM is received."""
     await init_db()
 
     consumer = AIOKafkaConsumer(
@@ -104,15 +73,7 @@ async def run() -> None:
         await producer.stop()
 
 
-# ── Message dispatch ───────────────────────────────────────────────────────────
-
 async def _handle_message(producer: AIOKafkaProducer, data: dict) -> None:
-    """
-    Entry point for each Kafka message consumed from `raw-events`.
-
-    Validates the message shape and delegates to _process_event().
-    Errors are caught here so a single bad message never blocks the consumer.
-    """
     event_id = data.get("event_id")
     endpoint_id = data.get("endpoint_id")
 
@@ -126,21 +87,11 @@ async def _handle_message(producer: AIOKafkaProducer, data: dict) -> None:
         logger.exception("Unhandled error while processing event %s — offset committed, moving on", event_id)
 
 
-# ── Core processing logic ──────────────────────────────────────────────────────
-
 async def _process_event(
     producer: AIOKafkaProducer,
     event_id: str,
     endpoint_id: str,
 ) -> None:
-    """
-    Load the Event and its Routes from the database, then fan-out:
-
-    For every active Route:
-      1. Evaluate the route's filter_expression (if any) against the event.
-      2. If the filter matches (or no filter is set), apply the transform pipeline.
-      3. Publish one message to `transformed-events` for the delivery worker.
-    """
     async with async_session_factory() as db:
         event = await db.get(Event, uuid.UUID(event_id))
         if not event:
@@ -170,20 +121,9 @@ async def _dispatch_route(
     event: Event,
     route: Route,
 ) -> None:
-    """
-    Evaluate filter, apply transform, and publish a delivery task for one route.
-
-    Args:
-        producer: AIOKafkaProducer to publish the transformed message.
-        event:    The Event ORM record (contains body + headers).
-        route:    The Route ORM record (contains filter + transform config).
-    """
     event_id = str(event.id)
     route_id = str(route.id)
 
-    # ── Step 1: Evaluate the filter expression ─────────────────────────────────
-    # route_matches_event() uses a unified {body, headers} context so filters
-    # can target any part of the incoming request (payload field OR HTTP header).
     should_deliver = route_matches_event(
         filter_expression=route.filter_expression,
         body=event.request_body,
@@ -193,10 +133,8 @@ async def _dispatch_route(
     )
 
     if not should_deliver:
-        # Logging is already handled inside route_matches_event().
         return
 
-    # ── Step 2: Apply the transform pipeline (if configured) ──────────────────
     body = event.request_body
     if route.transform_pipeline:
         try:
@@ -209,7 +147,6 @@ async def _dispatch_route(
             )
             return
 
-    # ── Step 3: Publish to `transformed-events` for the delivery worker ────────
     await producer.send_and_wait(
         settings.kafka_topic_transformed_events,
         value={
@@ -223,7 +160,7 @@ async def _dispatch_route(
             "max_retries":     route.max_retries,
             "retry_backoff_ms": route.retry_backoff_ms,
         },
-        key=route_id.encode(),  # Partition by route for ordering guarantees
+        key=route_id.encode(),
     )
     logger.info("Event %s → route %s dispatched to transformed-events", event_id, route_id)
 
@@ -231,10 +168,6 @@ async def _dispatch_route(
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 async def _process(producer: AIOKafkaProducer, event_id: str, endpoint_id: str) -> None:
-    """Compatibility wrapper for test imports.
-
-    Calls the internal `_process_event` implementation.
-    """
     await _process_event(producer, event_id, endpoint_id)
 
 if __name__ == "__main__":
