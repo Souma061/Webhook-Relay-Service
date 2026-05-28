@@ -125,9 +125,9 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/webhook-relay:${{ steps.version.outputs.version }}
             ${{ secrets.DOCKERHUB_USERNAME }}/webhook-relay:latest
-          # Layer cache from Docker Hub — speeds up rebuilds dramatically
-          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/webhook-relay:buildcache
-          cache-to:   type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/webhook-relay:buildcache,mode=max
+           # Layer cache stored in GitHub Actions — no registry tag needed
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # ── Image 2: Dashboard (React + nginx) ────────────────────────────────
       - name: Build and push — Dashboard image
@@ -140,8 +140,8 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/webhook-relay-dashboard:${{ steps.version.outputs.version }}
             ${{ secrets.DOCKERHUB_USERNAME }}/webhook-relay-dashboard:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/webhook-relay-dashboard:buildcache
-          cache-to:   type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/webhook-relay-dashboard:buildcache,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # Update the Docker Hub description from README.md automatically
       - name: Update Docker Hub description
