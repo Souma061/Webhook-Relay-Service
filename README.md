@@ -160,7 +160,7 @@ See [`.env.example`](.env.example) for all options. Key variables:
 ## Blog
 
 Detailed technical deep-dive covering design decisions, trade-offs, and code walkthroughs:
-[Building a Production-Grade Webhook Relay System](https://soumabrata.notion.site/Building-a-Production-Grade-Webhook-Relay-System-1a83e404955d803c8fb5e42e864ba5f3)
+[Building a Production-Grade Webhook Relay System](https://www.soumabrata.me/blog.html)
 
 ---
 
