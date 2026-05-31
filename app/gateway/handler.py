@@ -5,7 +5,7 @@ import ipaddress
 import json
 import logging
 import uuid
-
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.core.config import settings
@@ -144,6 +144,7 @@ async def receive_webhook(
                 ev = await db2.get(Event, event.id)
                 if ev is not None:
                     ev.status = "failed"
+                    ev.retry_at = datetime.utcnow() + timedelta(seconds=30) # Retry after 30 seconds
                     await db2.commit()
 
     asyncio.create_task(_publish())
