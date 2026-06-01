@@ -41,8 +41,6 @@ from app.core.redis import init_redis, close_redis
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def setup_database():
-    # Always drop and recreate to ensure the schema matches the current ORM models.
-    # This prevents stale-column errors when new columns are added (e.g. filter_expression).
     async with core_db.engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
@@ -56,6 +54,57 @@ async def setup_redis():
     await init_redis()
     yield
     await close_redis()
+
+
+# ── Auth fixtures (session-scoped) ─────────────────────────────────────────────
+
+_TEST_USER_EMAIL = "test-integration@webhook-relay.local"
+_TEST_USER_PASSWORD = "Str0ng!TestPass"
+
+
+@pytest_asyncio.fixture(scope="session")
+async def session_client():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture(scope="session")
+async def test_user(session_client):
+    resp = await session_client.post("/api/auth/register", json={
+        "email": _TEST_USER_EMAIL,
+        "password": _TEST_USER_PASSWORD,
+        "display_name": "Integration Tester",
+    })
+    if resp.status_code == 201:
+        data = resp.json()
+        return data["access_token"], data["user"]
+    resp = await session_client.post("/api/auth/login", json={
+        "email": _TEST_USER_EMAIL,
+        "password": _TEST_USER_PASSWORD,
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    return data["access_token"], data["user"]
+
+
+@pytest_asyncio.fixture(scope="session")
+async def auth_headers(test_user):
+    token, _ = test_user
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture(scope="session")
+async def workspace_id(test_user, auth_headers, session_client):
+    resp = await session_client.get("/api/workspaces/", headers=auth_headers)
+    assert resp.status_code == 200
+    workspaces = resp.json()
+    for ws in workspaces:
+        return ws["id"]
+    raise RuntimeError("No workspace found for test user")
+
+
+# ── Function-scoped client (for per-test isolation) ────────────────────────────
 
 @pytest_asyncio.fixture(scope="function")
 async def client():

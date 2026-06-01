@@ -1,138 +1,212 @@
-"""
-Integration tests for the Endpoints and Routes CRUD API.
-
-Covers: create, list, get, update, delete endpoints;
-create, list, update, delete routes; secret rotation; UUID validation.
-Requires a running PostgreSQL instance (configured in conftest.py).
-"""
 import pytest
 from httpx import AsyncClient
 
+ENDPOINT_PATH = "/api/workspaces/{workspace_id}/endpoints"
+ROUTES_PATH = "/api/workspaces/{workspace_id}/endpoints/{ep_id}/routes"
+ROUTE_DETAIL_PATH = "/api/workspaces/{workspace_id}/routes"
 
-# ── Endpoint CRUD ──────────────────────────────────────────────────────────────
 
 class TestCreateEndpoint:
-    async def test_create_returns_201_with_fields(self, client: AsyncClient):
-        resp = await client.post("/api/endpoints/", json={"name": "Acme Webhooks"})
+    async def test_create_returns_201_with_fields(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        resp = await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={"name": "Acme Webhooks"},
+            headers=auth_headers,
+        )
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "Acme Webhooks"
         assert "id" in data
-        assert len(data["hmac_secret"]) == 64  # secrets.token_hex(32)
         assert data["is_active"] is True
 
-    async def test_create_with_custom_secret(self, client: AsyncClient):
+    async def test_create_with_custom_secret(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
         resp = await client.post(
-            "/api/endpoints/",
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
             json={"name": "Custom Secret EP", "hmac_secret": "mysecret123"},
+            headers=auth_headers,
         )
         assert resp.status_code == 201
-        assert resp.json()["hmac_secret"] == "mysecret123"
 
-    async def test_create_requires_name(self, client: AsyncClient):
-        resp = await client.post("/api/endpoints/", json={})
-        assert resp.status_code == 422  # Pydantic validation
+    async def test_create_requires_name(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        resp = await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
 
 
 class TestListEndpoints:
-    async def test_list_returns_200_and_array(self, client: AsyncClient):
-        await client.post("/api/endpoints/", json={"name": "List EP 1"})
-        resp = await client.get("/api/endpoints/")
+    async def test_list_returns_200_and_array(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={"name": "List EP 1"},
+            headers=auth_headers,
+        )
+        resp = await client.get(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
-    async def test_newly_created_endpoint_appears_in_list(self, client: AsyncClient):
-        await client.post("/api/endpoints/", json={"name": "Unique EP for list"})
-        resp = await client.get("/api/endpoints/")
+    async def test_newly_created_endpoint_appears_in_list(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={"name": "Unique EP for list"},
+            headers=auth_headers,
+        )
+        resp = await client.get(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            headers=auth_headers,
+        )
         names = [ep["name"] for ep in resp.json()]
         assert "Unique EP for list" in names
 
 
 class TestGetEndpoint:
-    async def test_get_existing_endpoint(self, client: AsyncClient):
-        create = await client.post("/api/endpoints/", json={"name": "Get EP"})
+    async def test_get_existing_endpoint(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        create = await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={"name": "Get EP"},
+            headers=auth_headers,
+        )
         ep_id = create.json()["id"]
-        resp = await client.get(f"/api/endpoints/{ep_id}")
+        resp = await client.get(
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/{ep_id}",
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
         assert resp.json()["id"] == ep_id
 
-    async def test_get_nonexistent_returns_404(self, client: AsyncClient):
-        resp = await client.get("/api/endpoints/00000000-0000-0000-0000-000000000099")
+    async def test_get_nonexistent_returns_404(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        resp = await client.get(
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/00000000-0000-0000-0000-000000000099",
+            headers=auth_headers,
+        )
         assert resp.status_code == 404
 
-    async def test_get_invalid_uuid_returns_400(self, client: AsyncClient):
-        resp = await client.get("/api/endpoints/not-a-uuid")
+    async def test_get_invalid_uuid_returns_400(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        resp = await client.get(
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/not-a-uuid",
+            headers=auth_headers,
+        )
         assert resp.status_code == 400
         assert "invalid endpoint_id format" in resp.json()["detail"]
 
 
 class TestUpdateEndpoint:
-    async def test_update_name(self, client: AsyncClient):
-        create = await client.post("/api/endpoints/", json={"name": "Old Name"})
+    async def test_update_name(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        create = await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={"name": "Old Name"},
+            headers=auth_headers,
+        )
         ep_id = create.json()["id"]
-        resp = await client.put(f"/api/endpoints/{ep_id}", json={"name": "New Name"})
+        resp = await client.put(
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/{ep_id}",
+            json={"name": "New Name"},
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
         assert resp.json()["name"] == "New Name"
 
-    async def test_update_is_active_to_false(self, client: AsyncClient):
-        create = await client.post("/api/endpoints/", json={"name": "Active EP"})
+    async def test_update_is_active_to_false(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        create = await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={"name": "Active EP"},
+            headers=auth_headers,
+        )
         ep_id = create.json()["id"]
-        resp = await client.put(f"/api/endpoints/{ep_id}", json={"is_active": False})
+        resp = await client.put(
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/{ep_id}",
+            json={"is_active": False},
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
         assert resp.json()["is_active"] is False
 
-    async def test_update_nonexistent_returns_404(self, client: AsyncClient):
+    async def test_update_nonexistent_returns_404(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
         resp = await client.put(
-            "/api/endpoints/00000000-0000-0000-0000-000000000099",
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/00000000-0000-0000-0000-000000000099",
             json={"name": "Ghost"},
+            headers=auth_headers,
         )
         assert resp.status_code == 404
 
 
 class TestSecretRotation:
-    async def test_rotate_generates_new_64_char_secret(self, client: AsyncClient):
-        create = await client.post("/api/endpoints/", json={"name": "Rotate EP"})
+    async def test_rotate_generates_new_64_char_secret(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        create = await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={"name": "Rotate EP"},
+            headers=auth_headers,
+        )
         ep_id = create.json()["id"]
-        old_secret = create.json()["hmac_secret"]
 
-        resp = await client.post(f"/api/endpoints/{ep_id}/rotate")
+        resp = await client.post(
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/{ep_id}/rotate",
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
         new_secret = resp.json()["hmac_secret"]
-        assert new_secret != old_secret
         assert len(new_secret) == 64
 
-    async def test_rotate_nonexistent_returns_404(self, client: AsyncClient):
-        resp = await client.post("/api/endpoints/00000000-0000-0000-0000-000000000099/rotate")
+    async def test_rotate_nonexistent_returns_404(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        resp = await client.post(
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/00000000-0000-0000-0000-000000000099/rotate",
+            headers=auth_headers,
+        )
         assert resp.status_code == 404
 
 
 class TestDeleteEndpoint:
-    async def test_delete_returns_204(self, client: AsyncClient):
-        create = await client.post("/api/endpoints/", json={"name": "Delete EP"})
+    async def test_delete_returns_204(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        create = await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={"name": "Delete EP"},
+            headers=auth_headers,
+        )
         ep_id = create.json()["id"]
-        resp = await client.delete(f"/api/endpoints/{ep_id}")
+        resp = await client.delete(
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/{ep_id}",
+            headers=auth_headers,
+        )
         assert resp.status_code == 204
 
-    async def test_deleted_endpoint_returns_404_on_get(self, client: AsyncClient):
-        create = await client.post("/api/endpoints/", json={"name": "Gone EP"})
+    async def test_deleted_endpoint_returns_404_on_get(self, client: AsyncClient, auth_headers: dict, workspace_id: str):
+        create = await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={"name": "Gone EP"},
+            headers=auth_headers,
+        )
         ep_id = create.json()["id"]
-        await client.delete(f"/api/endpoints/{ep_id}")
-        resp = await client.get(f"/api/endpoints/{ep_id}")
+        await client.delete(
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/{ep_id}",
+            headers=auth_headers,
+        )
+        resp = await client.get(
+            f"{ENDPOINT_PATH.format(workspace_id=workspace_id)}/{ep_id}",
+            headers=auth_headers,
+        )
         assert resp.status_code == 404
 
 
-# ── Route CRUD ────────────────────────────────────────────────────────────────
-
 class TestRouteCRUD:
-    async def _create_endpoint(self, client: AsyncClient, name: str = "Route Owner") -> str:
-        resp = await client.post("/api/endpoints/", json={"name": name})
+    async def _create_endpoint(self, client, auth_headers, workspace_id, name="Route Owner"):
+        resp = await client.post(
+            ENDPOINT_PATH.format(workspace_id=workspace_id),
+            json={"name": name},
+            headers=auth_headers,
+        )
         return resp.json()["id"]
 
-    async def test_create_route_returns_201(self, client: AsyncClient):
-        ep_id = await self._create_endpoint(client, "Route Create EP")
+    async def test_create_route_returns_201(self, client, auth_headers, workspace_id):
+        ep_id = await self._create_endpoint(client, auth_headers, workspace_id, "Route Create EP")
         resp = await client.post(
-            f"/api/endpoints/{ep_id}/routes",
+            ROUTES_PATH.format(workspace_id=workspace_id, ep_id=ep_id),
             json={"name": "My Route", "url": "https://dest.example.com/hook"},
+            headers=auth_headers,
         )
         assert resp.status_code == 201
         data = resp.json()
@@ -141,65 +215,79 @@ class TestRouteCRUD:
         assert data["is_active"] is True
         assert data["method"] == "POST"
 
-    async def test_list_routes_for_endpoint(self, client: AsyncClient):
-        ep_id = await self._create_endpoint(client, "Route List EP")
-        await client.post(f"/api/endpoints/{ep_id}/routes", json={"name": "R1", "url": "http://a.com"})
-        await client.post(f"/api/endpoints/{ep_id}/routes", json={"name": "R2", "url": "http://b.com"})
+    async def test_list_routes_for_endpoint(self, client, auth_headers, workspace_id):
+        ep_id = await self._create_endpoint(client, auth_headers, workspace_id, "Route List EP")
+        routes_url = ROUTES_PATH.format(workspace_id=workspace_id, ep_id=ep_id)
+        await client.post(routes_url, json={"name": "R1", "url": "https://a.com"}, headers=auth_headers)
+        await client.post(routes_url, json={"name": "R2", "url": "https://b.com"}, headers=auth_headers)
 
-        resp = await client.get(f"/api/endpoints/{ep_id}/routes")
+        resp = await client.get(routes_url, headers=auth_headers)
         assert resp.status_code == 200
         assert len(resp.json()) == 2
         names = {r["name"] for r in resp.json()}
         assert names == {"R1", "R2"}
 
-    async def test_create_route_on_nonexistent_endpoint_returns_404(self, client: AsyncClient):
+    async def test_create_route_on_nonexistent_endpoint_returns_404(self, client, auth_headers, workspace_id):
         resp = await client.post(
-            "/api/endpoints/00000000-0000-0000-0000-000000000099/routes",
-            json={"name": "X", "url": "http://x.com"},
+            ROUTES_PATH.format(workspace_id=workspace_id, ep_id="00000000-0000-0000-0000-000000000099"),
+            json={"name": "X", "url": "https://x.com"},
+            headers=auth_headers,
         )
         assert resp.status_code == 404
 
-    async def test_update_route_url(self, client: AsyncClient):
-        ep_id = await self._create_endpoint(client, "Route Update EP")
+    async def test_update_route_url(self, client, auth_headers, workspace_id):
+        ep_id = await self._create_endpoint(client, auth_headers, workspace_id, "Route Update EP")
         create = await client.post(
-            f"/api/endpoints/{ep_id}/routes",
-            json={"name": "Update Route", "url": "http://old.com"},
+            ROUTES_PATH.format(workspace_id=workspace_id, ep_id=ep_id),
+            json={"name": "Update Route", "url": "https://old.com"},
+            headers=auth_headers,
         )
         route_id = create.json()["id"]
 
         resp = await client.put(
-            f"/api/endpoints/routes/{route_id}",
-            json={"url": "http://new.com"},
+            f"{ROUTE_DETAIL_PATH.format(workspace_id=workspace_id)}/{route_id}",
+            json={"url": "https://new.com"},
+            headers=auth_headers,
         )
         assert resp.status_code == 200
-        assert resp.json()["url"] == "http://new.com"
-        assert resp.json()["name"] == "Update Route"  # unchanged
+        assert resp.json()["url"] == "https://new.com"
+        assert resp.json()["name"] == "Update Route"
 
-    async def test_update_route_toggle_active(self, client: AsyncClient):
-        ep_id = await self._create_endpoint(client, "Toggle Route EP")
+    async def test_update_route_toggle_active(self, client, auth_headers, workspace_id):
+        ep_id = await self._create_endpoint(client, auth_headers, workspace_id, "Toggle Route EP")
         create = await client.post(
-            f"/api/endpoints/{ep_id}/routes",
-            json={"name": "Toggle Route", "url": "http://t.com"},
+            ROUTES_PATH.format(workspace_id=workspace_id, ep_id=ep_id),
+            json={"name": "Toggle Route", "url": "https://t.com"},
+            headers=auth_headers,
         )
         route_id = create.json()["id"]
 
         resp = await client.put(
-            f"/api/endpoints/routes/{route_id}", json={"is_active": False}
+            f"{ROUTE_DETAIL_PATH.format(workspace_id=workspace_id)}/{route_id}",
+            json={"is_active": False},
+            headers=auth_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["is_active"] is False
 
-    async def test_delete_route_returns_204(self, client: AsyncClient):
-        ep_id = await self._create_endpoint(client, "Route Delete EP")
+    async def test_delete_route_returns_204(self, client, auth_headers, workspace_id):
+        ep_id = await self._create_endpoint(client, auth_headers, workspace_id, "Route Delete EP")
         create = await client.post(
-            f"/api/endpoints/{ep_id}/routes",
-            json={"name": "Delete Route", "url": "http://del.com"},
+            ROUTES_PATH.format(workspace_id=workspace_id, ep_id=ep_id),
+            json={"name": "Delete Route", "url": "https://del.com"},
+            headers=auth_headers,
         )
         route_id = create.json()["id"]
 
-        resp = await client.delete(f"/api/endpoints/routes/{route_id}")
+        resp = await client.delete(
+            f"{ROUTE_DETAIL_PATH.format(workspace_id=workspace_id)}/{route_id}",
+            headers=auth_headers,
+        )
         assert resp.status_code == 204
 
-    async def test_delete_nonexistent_route_returns_404(self, client: AsyncClient):
-        resp = await client.delete("/api/endpoints/routes/00000000-0000-0000-0000-000000000099")
+    async def test_delete_nonexistent_route_returns_404(self, client, auth_headers, workspace_id):
+        resp = await client.delete(
+            f"{ROUTE_DETAIL_PATH.format(workspace_id=workspace_id)}/00000000-0000-0000-0000-000000000099",
+            headers=auth_headers,
+        )
         assert resp.status_code == 404

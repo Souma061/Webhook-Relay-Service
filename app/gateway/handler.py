@@ -54,7 +54,7 @@ async def receive_webhook(
     endpoint_id: str,
     request: Request,
     x_hub_signature_256: str | None = Header(None),
-    idempotency_key: str | None = Header(None),
+    idempotency_key: str | None = Header(None, alias="x-idempotency-key"),
 ):
     raw_body = await _read_limited_body(request)
 

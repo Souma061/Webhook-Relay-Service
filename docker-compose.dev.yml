@@ -59,6 +59,21 @@ services:
         condition: service_healthy
     restart: on-failure
 
+  retry-scheduler:
+    image: souma061/webhook-relay:latest
+    command: python -m workers.retry_scheduler
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      app:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+
+
+
   # Vite dev server with hot-reload
   dashboard:
     build:
