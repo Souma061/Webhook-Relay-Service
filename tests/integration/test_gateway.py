@@ -2,11 +2,12 @@ import hashlib
 import hmac
 import json
 import pytest
-import asyncio
-from unittest.mock import AsyncMock
 from httpx import AsyncClient
+from sqlalchemy import select
 
-import app.core.kafka as core_kafka
+from app.core.database import async_session_factory
+from app.models.event import Event
+from app.models.outbox import OutboxRecord
 
 ENDPOINT_PATH = "/api/workspaces/{workspace_id}/endpoints"
 KNOWN_SECRET = "int-gw-test-secret-aabbccdd00112233445566778899eeff"
@@ -106,12 +107,10 @@ class TestSuccessfulIngestion:
         assert data["status"] == "accepted"
         assert "event_id" in data
 
-    async def test_kafka_producer_called_with_event_id(self, client, auth_headers, workspace_id):
+    async def test_outbox_record_created(self, client, auth_headers, workspace_id):
         ep = await create_endpoint(client, auth_headers, workspace_id, "Kafka EP")
         payload = b'{"event": "payment.succeeded"}'
         sig = make_signature(KNOWN_SECRET, payload)
-
-        core_kafka._producer.send_and_wait.reset_mock()
 
         resp = await client.post(
             f"/hooks/{ep['id']}",
@@ -119,13 +118,20 @@ class TestSuccessfulIngestion:
             headers={"x-hub-signature-256": sig},
         )
         assert resp.status_code == 202
-        await asyncio.sleep(0)
+        event_id = resp.json()["event_id"]
 
-        core_kafka._producer.send_and_wait.assert_called_once()
-        call_kwargs = core_kafka._producer.send_and_wait.call_args
-        msg_value = call_kwargs[1]["value"] if call_kwargs[1] else call_kwargs[0][1]
-        assert "event_id" in msg_value
-        assert msg_value["endpoint_id"] == ep["id"]
+        async with async_session_factory() as db:
+            event = await db.get(Event, event_id)
+            assert event is not None
+            assert str(event.endpoint_id) == ep["id"]
+
+            result = await db.execute(
+                select(OutboxRecord).where(OutboxRecord.event_id == event_id)
+            )
+            outbox = result.scalar_one_or_none()
+            assert outbox is not None, "OutboxRecord should be created"
+            assert outbox.status == "pending"
+            assert outbox.publish_key == str(ep["id"])
 
 
 class TestIdempotency:

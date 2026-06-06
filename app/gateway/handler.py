@@ -1,20 +1,18 @@
-import asyncio
 import hashlib
 import hmac
 import ipaddress
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.core.config import settings
 from app.core.redis import get_redis
-from app.core.kafka import get_kafka
 from app.core.database import async_session_factory
 from app.core.rate_limiter import SlidingWindowRateLimiter
 from app.models.endpoint import Endpoint
 from app.models.event import Event
+from app.models.outbox import OutboxRecord
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +115,9 @@ async def receive_webhook(
             if key.lower() not in _EXCLUDED_HEADERS
         }
 
+        event_id = uuid.uuid4()
         event = Event(
+            id=event_id,
             endpoint_id=endpoint.id,
             idempotency_key=idempotency_key,
             request_body=payload,
@@ -125,36 +125,14 @@ async def receive_webhook(
             status="pending",
         )
         db.add(event)
+
+        outbox = OutboxRecord(
+            event_id=event_id,
+            publish_key=str(endpoint.id),
+            publish_topic=settings.kafka_topic_raw_events,
+        )
+        db.add(outbox)
         await db.commit()
         await db.refresh(event)
-
-    async def _publish():
-        producer = get_kafka()
-        if producer is None:
-            return
-        try:
-            await producer.send_and_wait(
-                settings.kafka_topic_raw_events,
-                value={
-                    "event_id": str(event.id),
-                    "endpoint_id": str(event.endpoint_id),
-                },
-                key=str(event.endpoint_id).encode(),
-            )
-            async with async_session_factory() as db2:
-                ev = await db2.get(Event, event.id)
-                if ev is not None:
-                    ev.status = "queued"
-                    await db2.commit()
-        except Exception:
-            logger.exception("Failed to publish event %s to Kafka", event.id)
-            async with async_session_factory() as db2:
-                ev = await db2.get(Event, event.id)
-                if ev is not None:
-                    ev.status = "failed"
-                    ev.retry_at = datetime.utcnow() + timedelta(seconds=30) # Retry after 30 seconds
-                    await db2.commit()
-
-    asyncio.create_task(_publish())
 
     return {"status": "accepted", "event_id": str(event.id)}

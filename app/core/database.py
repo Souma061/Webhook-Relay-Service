@@ -26,6 +26,7 @@ async def init_db():
     import app.models.route      # noqa: F401
     import app.models.event      # noqa: F401
     import app.models.delivery_attempt  # noqa: F401
+    import app.models.outbox     # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -37,8 +38,21 @@ async def init_db():
             "ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES workspaces(id);",
             "ALTER TABLE events ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'pending';",
             "ALTER TABLE events ADD COLUMN IF NOT EXISTS retry_at TIMESTAMPTZ;",
+            """CREATE TABLE IF NOT EXISTS outbox_records (
+                id UUID PRIMARY KEY,
+                event_id UUID NOT NULL REFERENCES events(id),
+                status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                publish_key VARCHAR(255) NOT NULL,
+                publish_topic VARCHAR(255) NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                processed_at TIMESTAMPTZ
+            );""",
+            "CREATE INDEX IF NOT EXISTS ix_outbox_records_status ON outbox_records(status);",
+            "CREATE INDEX IF NOT EXISTS ix_outbox_records_event_id ON outbox_records(event_id);",
         ]:
             try:
                 await conn.execute(text(stmt))
             except Exception:
-                pass  # column already exists — safe to ignore
+                pass  # already exists — safe to ignore
