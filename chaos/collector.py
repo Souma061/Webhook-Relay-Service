@@ -16,7 +16,9 @@ logger = logging.getLogger("collector")
 app = FastAPI()
 
 
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"])
+@app.api_route(
+    "/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]
+)
 async def catch_all(request: Request, path: str):
     body_bytes = await request.body()
     body_text = body_bytes.decode("utf-8", errors="replace")
