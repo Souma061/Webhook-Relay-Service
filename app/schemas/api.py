@@ -11,11 +11,13 @@ from jmespath.exceptions import JMESPathError
 class EndpointCreate(BaseModel):
     name: str
     hmac_secret: str | None = None
+    rate_limit_rps: int | None = None
 
 
 class EndpointUpdate(BaseModel):
     name: str | None = None
     is_active: bool | None = None
+    rate_limit_rps: int | None = None
 
 
 class EndpointOut(BaseModel):
@@ -23,6 +25,7 @@ class EndpointOut(BaseModel):
     workspace_id: UUID
     name: str
     is_active: bool
+    rate_limit_rps: int | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -101,6 +104,7 @@ class RouteCreate(BaseModel):
     timeout_ms: int = 10000
     max_retries: int = 5
     retry_backoff_ms: int = 1000
+    rate_limit_rpm: int | None = None
     filter_expression: str | None = None
 
     @field_validator("filter_expression")
@@ -119,6 +123,7 @@ class RouteUpdate(BaseModel):
     max_retries: int | None = None
     retry_backoff_ms: int | None = None
     is_active: bool | None = None
+    rate_limit_rpm: int | None = None
     filter_expression: str | None = None
 
     @field_validator("filter_expression")
@@ -136,6 +141,7 @@ class RouteOut(BaseModel):
     timeout_ms: int
     max_retries: int
     created_at: datetime
+    rate_limit_rpm: int | None = None
     filter_expression: str | None = None
     transform_pipeline: list[PipelineStep] | None = None
     headers: dict[str, str] | None = None

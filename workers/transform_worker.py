@@ -46,7 +46,7 @@ async def run() -> None:
         group_id=settings.kafka_consumer_group_transform,
         value_deserializer=lambda b: json.loads(b.decode("utf-8")),
         auto_offset_reset="earliest",
-        enable_auto_commit=True,
+        enable_auto_commit=False,
     )
     producer = AIOKafkaProducer(
         bootstrap_servers=settings.kafka_bootstrap_servers,
@@ -67,6 +67,10 @@ async def run() -> None:
             if _stop.is_set():
                 break
             await _handle_message(producer, msg.value)
+            try:
+                await consumer.commit()
+            except Exception:
+                logger.exception("Failed to commit offset")
     finally:
         logger.info("Stopping transform worker …")
         await consumer.stop()

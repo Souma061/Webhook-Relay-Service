@@ -18,7 +18,7 @@ RETRY_DELAY_S = 30
 
 async def run():
     engine = create_async_engine(
-        settings.database_url.replace("+asyncpg", ""),
+        settings.database_url,
         echo=False,
         poolclass=NullPool,
     )

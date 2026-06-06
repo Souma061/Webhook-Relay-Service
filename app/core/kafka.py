@@ -51,3 +51,5 @@ async def close_kafka():
 
 def get_kafka() -> AIOKafkaProducer | None:
     return _producer
+
+

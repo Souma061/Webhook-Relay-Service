@@ -54,6 +54,9 @@ def validate_delivery_url_for_request(url: str) -> None:
     except HTTPException as exc:
         raise ValueError(str(exc.detail)) from exc
 
+    if settings.allow_insecure_delivery_urls:
+        return
+
     parsed = urlparse(url)
     assert parsed.hostname is not None
 

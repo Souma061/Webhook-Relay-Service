@@ -63,7 +63,19 @@ async def _deliver_with_retry(
             await _deliver_with_retry(event_id, route, body, next_attempt)
         return
 
-    if not await rate_limiter.allow_request(url):
+    route_rpm = route.get("rate_limit_rpm")
+    if route_rpm is not None:
+        if not await rate_limiter.allow_request(f"route:{route['id']}", route_rpm):
+            async with async_session_factory() as db:
+                db.add(DeliveryAttempt(
+                    event_id=event_id, route_id=route["id"], attempt_number=attempt,
+                    request_url=url, request_body=body, response_status=None,
+                    response_body=None, error="route_rate_limited", duration_ms=0,
+                ))
+                await db.commit()
+            return
+
+    if not await rate_limiter.allow_request(f"dest:{url}"):
         if rate_limit_waits >= MAX_RATE_LIMIT_WAITS:
             async with async_session_factory() as db:
                 db.add(DeliveryAttempt(

@@ -12,12 +12,14 @@ from app.core.config import settings
 from app.core.redis import get_redis
 from app.core.kafka import get_kafka
 from app.core.database import async_session_factory
+from app.core.rate_limiter import SlidingWindowRateLimiter
 from app.models.endpoint import Endpoint
 from app.models.event import Event
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+rate_limiter = SlidingWindowRateLimiter()
 
 
 async def _read_limited_body(request: Request) -> bytes:
@@ -71,6 +73,12 @@ async def receive_webhook(
             raise HTTPException(410, "endpoint is disabled")
         if not _client_ip_allowed(request, endpoint.ip_allowlist):
             raise HTTPException(403, "sender ip is not allowed")
+
+        if endpoint.rate_limit_rps is not None:
+            rl_key = f"ingress:ep:{endpoint.id}"
+            rpm = endpoint.rate_limit_rps * 60
+            if not await rate_limiter.allow_request(rl_key, rpm):
+                raise HTTPException(429, "endpoint rate limit exceeded")
 
         if endpoint.hmac_secret:
             if not x_hub_signature_256:

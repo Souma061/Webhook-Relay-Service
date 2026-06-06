@@ -39,7 +39,7 @@ async def run():
         group_id=settings.kafka_consumer_group_delivery,
         value_deserializer=lambda b: json.loads(b.decode("utf-8")),
         auto_offset_reset="earliest",
-        enable_auto_commit=True,
+        enable_auto_commit=False,
     )
 
     await consumer.start()
@@ -61,7 +61,7 @@ async def run():
                 logger.warning("Skipping malformed delivery message: %s", data)
                 continue
 
-            task = asyncio.create_task(_dispatch(data))
+            task = asyncio.create_task(_dispatch(data, consumer))
             pending.add(task)
             task.add_done_callback(pending.discard)
 
@@ -75,7 +75,7 @@ async def run():
         await close_redis()
 
 
-async def _dispatch(data: dict):
+async def _dispatch(data: dict, consumer: AIOKafkaConsumer):
     async with _GLOBAL_SEMAPHORE:
         try:
             route = {
@@ -98,6 +98,11 @@ async def _dispatch(data: dict):
                 "Unhandled error delivering event %s to %s: %s",
                 data.get("event_id"), data.get("url"), exc, exc_info=True,
             )
+        else:
+            try:
+                await consumer.commit()
+            except Exception:
+                logger.exception("Failed to commit offset for event %s", data.get("event_id"))
 
 
 if __name__ == "__main__":

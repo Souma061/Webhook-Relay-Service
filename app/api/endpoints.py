@@ -61,6 +61,7 @@ async def create_endpoint(
             workspace_id=membership.workspace_id,
             name=body.name,
             hmac_secret=body.hmac_secret or secrets.token_hex(32),
+            rate_limit_rps=body.rate_limit_rps,
         )
         db.add(ep)
         await db.commit()
@@ -96,6 +97,8 @@ async def update_endpoint(
             ep.name = body.name
         if body.is_active is not None:
             ep.is_active = body.is_active
+        if body.rate_limit_rps is not None:
+            ep.rate_limit_rps = body.rate_limit_rps
         await db.commit()
         await db.refresh(ep)
         return ep
