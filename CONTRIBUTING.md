@@ -34,7 +34,7 @@ app/              — FastAPI application
   schemas/        — Pydantic schemas
   middleware/     — RBAC middleware
 workers/          — Kafka consumer workers
-dashboard/        — React dashboard (Vite)
+dashboard/        — React dashboard (Vdoite)
 tests/            — Unit and E2E tests
 ```
 
