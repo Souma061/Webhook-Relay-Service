@@ -152,3 +152,94 @@ class TestIdempotency:
         assert first.status_code == 202
         assert second.status_code == 202
         assert second.json().get("status") == "duplicate"
+
+
+class TestSchemaValidation:
+    SCHEMA = {
+        "type": "object",
+        "required": ["event", "amount"],
+        "properties": {
+            "event": {"type": "string"},
+            "amount": {"type": "number", "minimum": 0},
+        },
+        "additionalProperties": False,
+    }
+
+    async def create_endpoint_with_schema(self, client, auth_headers, workspace_id):
+        secret = "schema-test-secret"
+        resp = await client.post(
+            f"/api/workspaces/{workspace_id}/endpoints",
+            json={
+                "name": "Schema EP",
+                "hmac_secret": secret,
+                "request_body_schema": self.SCHEMA,
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json(), secret
+
+    async def test_valid_payload_passes_schema_validation(self, client, auth_headers, workspace_id):
+        ep, secret = await self.create_endpoint_with_schema(client, auth_headers, workspace_id)
+        payload = b'{"event": "order.created", "amount": 100}'
+        sig = make_signature(secret, payload)
+        resp = await client.post(
+            f"/hooks/{ep['id']}",
+            content=payload,
+            headers={"x-hub-signature-256": sig},
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_missing_required_field_returns_422(self, client, auth_headers, workspace_id):
+        ep, secret = await self.create_endpoint_with_schema(client, auth_headers, workspace_id)
+        payload = b'{"event": "order.created"}'
+        sig = make_signature(secret, payload)
+        resp = await client.post(
+            f"/hooks/{ep['id']}",
+            content=payload,
+            headers={"x-hub-signature-256": sig},
+        )
+        assert resp.status_code == 422
+        assert "amount" in resp.json()["detail"]
+
+    async def test_wrong_type_returns_422(self, client, auth_headers, workspace_id):
+        ep, secret = await self.create_endpoint_with_schema(client, auth_headers, workspace_id)
+        payload = b'{"event": "order.created", "amount": "not-a-number"}'
+        sig = make_signature(secret, payload)
+        resp = await client.post(
+            f"/hooks/{ep['id']}",
+            content=payload,
+            headers={"x-hub-signature-256": sig},
+        )
+        assert resp.status_code == 422
+
+    async def test_additional_property_rejected(self, client, auth_headers, workspace_id):
+        ep, secret = await self.create_endpoint_with_schema(client, auth_headers, workspace_id)
+        payload = b'{"event": "order.created", "amount": 100, "extra": "forbidden"}'
+        sig = make_signature(secret, payload)
+        resp = await client.post(
+            f"/hooks/{ep['id']}",
+            content=payload,
+            headers={"x-hub-signature-256": sig},
+        )
+        assert resp.status_code == 422
+
+    async def test_endpoint_without_schema_accepts_any_payload(self, client, auth_headers, workspace_id):
+        ep = await create_endpoint(client, auth_headers, workspace_id, "No Schema EP")
+        payload = b'{"anything": "goes", "numbers": [1,2,3]}'
+        sig = make_signature(KNOWN_SECRET, payload)
+        resp = await client.post(
+            f"/hooks/{ep['id']}",
+            content=payload,
+            headers={"x-hub-signature-256": sig},
+        )
+        assert resp.status_code == 202
+
+    async def test_schema_is_returned_in_endpoint_response(self, client, auth_headers, workspace_id):
+        ep, _ = await self.create_endpoint_with_schema(client, auth_headers, workspace_id)
+        resp = await client.get(
+            f"/api/workspaces/{workspace_id}/endpoints/{ep['id']}",
+            headers=auth_headers,
+        )
+        data = resp.json()
+        assert data["request_body_schema"] == self.SCHEMA

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 import uuid
 
@@ -62,6 +63,7 @@ async def create_endpoint(
             name=body.name,
             hmac_secret=body.hmac_secret or secrets.token_hex(32),
             rate_limit_rps=body.rate_limit_rps,
+            request_body_schema=json.dumps(body.request_body_schema) if body.request_body_schema else None,
         )
         db.add(ep)
         await db.commit()
@@ -99,6 +101,8 @@ async def update_endpoint(
             ep.is_active = body.is_active
         if body.rate_limit_rps is not None:
             ep.rate_limit_rps = body.rate_limit_rps
+        if body.request_body_schema is not None:
+            ep.request_body_schema = json.dumps(body.request_body_schema)
         await db.commit()
         await db.refresh(ep)
         return ep

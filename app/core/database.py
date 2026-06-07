@@ -36,6 +36,7 @@ async def init_db():
             "ALTER TABLE routes ADD COLUMN IF NOT EXISTS filter_expression TEXT;",
             "ALTER TABLE events ADD COLUMN IF NOT EXISTS request_headers JSONB;",
             "ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES workspaces(id);",
+            "ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS request_body_schema TEXT;",
             "ALTER TABLE events ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'pending';",
             "ALTER TABLE events ADD COLUMN IF NOT EXISTS retry_at TIMESTAMPTZ;",
             """CREATE TABLE IF NOT EXISTS outbox_records (

@@ -5,6 +5,7 @@ import json
 import logging
 import uuid
 from fastapi import APIRouter, Header, HTTPException, Request
+from jsonschema import validate as jsonschema_validate, ValidationError as SchemaValidationError
 
 from app.core.config import settings
 from app.core.redis import get_redis
@@ -100,6 +101,13 @@ async def receive_webhook(
             payload = json.loads(raw_body)
         except json.JSONDecodeError:
             raise HTTPException(400, "invalid JSON payload")
+
+        if endpoint.request_body_schema:
+            try:
+                schema = json.loads(endpoint.request_body_schema)
+                jsonschema_validate(payload, schema)
+            except (json.JSONDecodeError, SchemaValidationError) as e:
+                raise HTTPException(422, detail=str(e))
 
         if idempotency_key:
             redis = get_redis()

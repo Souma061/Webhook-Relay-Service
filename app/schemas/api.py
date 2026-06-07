@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from pydantic import BaseModel, field_validator, ConfigDict, model_validator
 from uuid import UUID
 from datetime import datetime
@@ -12,12 +14,14 @@ class EndpointCreate(BaseModel):
     name: str
     hmac_secret: str | None = None
     rate_limit_rps: int | None = None
+    request_body_schema: dict | None = None
 
 
 class EndpointUpdate(BaseModel):
     name: str | None = None
     is_active: bool | None = None
     rate_limit_rps: int | None = None
+    request_body_schema: dict | None = None
 
 
 class EndpointOut(BaseModel):
@@ -26,9 +30,17 @@ class EndpointOut(BaseModel):
     name: str
     is_active: bool
     rate_limit_rps: int | None = None
+    request_body_schema: dict | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("request_body_schema", mode="before")
+    @classmethod
+    def parse_schema(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
 
 
 class SecretRotateOut(BaseModel):
