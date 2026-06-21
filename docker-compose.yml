@@ -72,6 +72,21 @@ services:
         condition: service_started
       kafka:
         condition: service_healthy
+
+  # ── Outbox Relay (Transactional Outbox Pattern) ──────────────────────────────
+  outbox-relay:
+    image: souma061/webhook-relay:latest
+    command: python -m workers.outbox_relay
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      app:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
   retry-scheduler:
     image: souma061/webhook-relay:latest
     command: python -m workers.retry_scheduler
@@ -142,6 +157,19 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+
+  # ── Kafka UI ──────────────────────────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: webhook-relay
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
 
 volumes:
   pgdata:

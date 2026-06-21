@@ -21,6 +21,12 @@ services:
       - ./app:/app/app
       - ./workers:/app/workers
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,6 +56,8 @@ services:
     volumes:
       - ./app:/app/app
       - ./workers:/app/workers
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,18 +67,32 @@ services:
         condition: service_healthy
     restart: on-failure
 
-  retry-scheduler:
-    image: souma061/webhook-relay:latest
-    command: python -m workers.retry_scheduler
-    restart: unless-stopped
+  outbox-relay:
+    build: .
+    command: python -m workers.outbox_relay
     env_file: .env
+    volumes:
+      - ./app:/app/app
+      - ./workers:/app/workers
     depends_on:
-      app:
+      postgres:
         condition: service_healthy
-      redis:
-        condition: service_started
       kafka:
         condition: service_healthy
+    restart: on-failure
+
+  retry-scheduler:
+    build: .
+    command: python -m workers.retry_scheduler
+    env_file: .env
+    volumes:
+      - ./workers:/app/workers
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: on-failure
 
 
 
@@ -137,6 +159,19 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+
+  # ── Kafka UI ──────────────────────────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: webhook-relay
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
 
 volumes:
   pgdata_dev:
